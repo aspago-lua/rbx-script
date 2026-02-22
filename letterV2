@@ -18,7 +18,7 @@ local CONFIG = {
     autoResetTime = 300,       -- 5 minutes in seconds
     wordsPerPage = 10,         -- Words per page
 }
-local VERSION = "2.4"
+local VERSION = "2.5"
 -- Common words to ignore
 local commonWords = {
     ["the"] = true, ["and"] = true, ["a"] = true, ["an"] = true,
@@ -38,6 +38,7 @@ local allWords = {}
 local consoleAutoComplete = false
 local collectedLetters = {}
 local usedWords = {}
+local prefixCount = {}
 local lastWordTime = 0
 local topWords = {}
 local selectedIndex = 1
@@ -46,6 +47,7 @@ local autoTrollEnabled = false
 local isTyping = false
 local cancelTyping = false
 local function panicDelete()
+
 
     cancelTyping = true
     isTyping = false
@@ -510,6 +512,16 @@ local function loadDictionary()
                 print("[✓] " .. #allWords .. " words loaded from source #" .. i)
                 searchBox.PlaceholderText = "Type a word"
                 notify("✅ Dictionary loaded! (" .. #allWords .. " words)")
+				-- Build prefix count (3 & 4 letters)
+                for _, word in ipairs(allWords) do
+                    if #word >= 4 then
+                        local p3 = word:sub(1,3)
+                        local p4 = word:sub(1,4)
+
+                        prefixCount[p3] = (prefixCount[p3] or 0) + 1
+                        prefixCount[p4] = (prefixCount[p4] or 0) + 1
+                    end
+                end
                 return true
             end
         else
@@ -688,6 +700,28 @@ local function isSafeWord(word)
     return true
 end
 
+local function hasAdaptiveDangerousEnding(word)
+
+    if #word < 5 then
+        return false
+    end
+
+    local last3 = word:sub(-3)
+    local last4 = word:sub(-4)
+
+    local threshold = 15  -- bisa kamu adjust (10–25)
+
+    if prefixCount[last3] and prefixCount[last3] >= threshold then
+        return true
+    end
+
+    if prefixCount[last4] and prefixCount[last4] >= threshold then
+        return true
+    end
+
+    return false
+end
+
 local function updateTopWords(input)
     topWords = {}
     input = input:lower()
@@ -709,7 +743,9 @@ local function updateTopWords(input)
         if w:sub(1, #input) == input
         and w ~= input
         and not usedWords[w]
-        and isSafeWord(w) then
+        and isSafeWord(w)
+        and not hasAdaptiveDangerousEnding(w) then
+
             table.insert(matches, w)
         end
     end
@@ -790,7 +826,8 @@ local function autoTriggerTroll(savedLetters)
         if w:sub(1, #input) == input
         and not usedWords[w]
         and #w >= 7
-        and isSafeWord(w) then
+        and isSafeWord(w)
+        and not hasAdaptiveDangerousEnding(w) then
             table.insert(longWords, w)
         end
     end
@@ -843,7 +880,9 @@ trollButton.MouseButton1Click:Connect(function()
         if w:sub(1, #input) == input
         and not usedWords[w]
         and #w >= 7
-        and isSafeWord(w) then
+        and isSafeWord(w)
+		and not hasAdaptiveDangerousEnding(w) then
+		
             table.insert(longWords, w)
         end
     end
