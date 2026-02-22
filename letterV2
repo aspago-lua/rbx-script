@@ -14,11 +14,11 @@ local CONFIG = {
     typingSpeed = 0.15,        -- Typing speed (seconds between each letter)
     minLength = 3,             -- Minimum word length
     maxLength = 15,            -- Maximum word length
-    idealLength = 6,           -- Ideal length for prioritization
+    idealLength = 7,           -- Ideal length for prioritization
     autoResetTime = 300,       -- 5 minutes in seconds
     wordsPerPage = 10,         -- Words per page
 }
-
+local VERSION = "2.4"
 -- Common words to ignore
 local commonWords = {
     ["the"] = true, ["and"] = true, ["a"] = true, ["an"] = true,
@@ -42,7 +42,25 @@ local lastWordTime = 0
 local topWords = {}
 local selectedIndex = 1
 local currentPage = 1
-local autoTrollEnabled = false -- State awal fitur Auto Troll
+local autoTrollEnabled = false
+local isTyping = false
+local cancelTyping = false
+local function panicDelete()
+
+    cancelTyping = true
+    isTyping = false
+
+    task.wait(0.05)
+
+    -- Kirim backspace berlebihan untuk memastikan bersih
+    for i = 1, 25 do
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Backspace, false, game)
+        task.wait(0.01)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Backspace, false, game)
+    end
+
+    searchBox.Text = ""
+end
 
 -- GUI SETUP =============================================================
 
@@ -81,15 +99,15 @@ titleBar.ClipsDescendants = true
 
 -- TITLE TEXT
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1,-50,1,0)
-titleLabel.Position = UDim2.new(0,90,0,0)
+titleLabel.Size = UDim2.new(1, -80, 1, 0)
+titleLabel.Position = UDim2.new(0, 40, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "LendowSky x MasArip  |  V2.1"
+titleLabel.Text = "LendowSky x MasArip  •  v" .. VERSION
 titleLabel.Font = Enum.Font.GothamMedium
 titleLabel.TextColor3 = Color3.fromRGB(200,200,200)
 titleLabel.TextScaled = false
 titleLabel.TextSize = 17
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.TextXAlignment = Enum.TextXAlignment.Center
 titleLabel.TextYAlignment = Enum.TextYAlignment.Center
 titleLabel.TextColor3 = Color3.fromRGB(220,220,220)
 titleLabel.Parent = titleBar
@@ -122,10 +140,16 @@ local function createMacButton(color)
     
     return btn
 end
-
 local closeBtn = createMacButton(Color3.fromRGB(255,95,86))
 local miniBtn  = createMacButton(Color3.fromRGB(255,189,46))
 local maxBtn   = createMacButton(Color3.fromRGB(39,201,63))
+local panicBtn = createMacButton(Color3.fromRGB(255, 60, 60))
+panicBtn.Parent = titleBar
+panicBtn.Position = UDim2.new(1, -30, 0.5, -7) -- Posisi di kanan atas
+panicBtn.Text = "!" -- Icon tanda seru sebagai simbol panic
+panicBtn.TextColor3 = Color3.new(1, 1, 1)
+panicBtn.TextSize = 12
+panicBtn.Font = Enum.Font.GothamBold
 
 -- CONTENT FRAME
 local contentFrame = Instance.new("Frame")
@@ -319,8 +343,6 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(updateSearchHeight)
 
 -- DRAG SYSTEM (TITLE BAR ONLY)
 
-local UserInputService = game:GetService("UserInputService")
-
 local dragging = false
 local dragStart
 local startPos
@@ -358,16 +380,40 @@ end)
 -- MINIMIZE SYSTEM
 local minimized = false
 local originalSize = mainFrame.Size
+local originalPosition = mainFrame.Position
 
 miniBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
 
     if minimized then
         contentFrame.Visible = false
-        mainFrame.Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, 0, 40*scaleFactor)
+
+        originalSize = mainFrame.Size
+        originalPosition = mainFrame.Position
+
+        mainFrame.Size = UDim2.new(0, 180, 0, 40 * scaleFactor)
+
+        -- Ubah jadi version saja
+        titleLabel.Text = "v" .. VERSION
+
+        -- Center-kan text
+        titleLabel.Size = UDim2.new(1, 0, 1, 0)
+        titleLabel.Position = UDim2.new(0, 0, 0, 0)
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+
     else
         contentFrame.Visible = true
+
         mainFrame.Size = originalSize
+        mainFrame.Position = originalPosition
+
+        -- Kembalikan title normal
+        titleLabel.Text = "LendowSky x MasArip  •  v" .. VERSION
+
+        -- Kembalikan alignment awal
+        titleLabel.Size = UDim2.new(1, -80, 1, 0)
+        titleLabel.Position = UDim2.new(0, 40, 0, 0)
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Center
     end
 end)
 
@@ -495,27 +541,46 @@ end
 
 -- AUTO-TYPE FUNCTION ==========================================================
 local function autoTypeWord(word, currentInput)
-    local remaining = word:sub(#currentInput + 1)
-    task.spawn(function()
-        local cam = workspace.CurrentCamera
-        local size = cam.ViewportSize
-        local x, y = size.X/2, size.Y/2
-        
-        -- Simulasi klik box (sedikit delay sebelum mulai ngetik)
-        task.wait(math.random(2, 5) / 10) 
 
-        -- Type remaining letters
+    if isTyping then return end
+    isTyping = true
+    cancelTyping = false
+
+    local remaining = word:sub(#currentInput + 1)
+
+    task.spawn(function()
+
+        -- Delay awal seperti manusia mikir
+        task.wait(math.random(15, 35) / 100)
+
         for c in remaining:upper():gmatch(".") do
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[c], false, game)
-            -- Speed acak antara 0.08 detik sampai 0.25 detik per huruf
-            task.wait(math.random(8, 25) / 100) 
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[c], false, game)
+            if cancelTyping then break end
+
+            local key = Enum.KeyCode[string.upper(c)]
+            if key then
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+
+                -- Delay natural 0.08 - 0.20 detik
+                task.wait(math.random(8, 20) / 100)
+
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+
+                -- Kadang manusia pause sedikit
+                if math.random() < 0.18 then
+                    task.wait(math.random(6, 16) / 100)
+                end
+            end
         end
 
-        -- Jeda sebelum tekan Enter (seolah mikir sebentar)
-        task.wait(math.random(3, 7) / 10)
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        if not cancelTyping and isTyping then
+            task.wait(math.random(12, 30) / 100)
+
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        end
+
+        isTyping = false
     end)
 end
 
@@ -576,19 +641,53 @@ end
 end
 
 -- SEARCH LOGIC WITH SMART PRIORITIZATION ======================================
--- SEARCH LOGIC WITH SMART PRIORITIZATION ======================================
 local function getConsonantCount(word)
     local consonants = "bcdfghjklmnpqrstvwxyz"
     local count = 0
     local found = {}
+
     for char in word:gmatch(".") do
         if consonants:find(char) and not found[char] then
             count = count + 1
             found[char] = true
         end
     end
+
     return count
 end
+local function isSafeWord(word)
+
+    if #word < 5 then
+        return false
+    end
+
+    local unique = {}
+    local charCount = {}
+
+    for c in word:gmatch(".") do
+        unique[c] = true
+        charCount[c] = (charCount[c] or 0) + 1
+    end
+
+    local uniqueCount = 0
+    for _ in pairs(unique) do
+        uniqueCount += 1
+    end
+
+    if uniqueCount <= 1 then
+        return false
+    end
+
+    -- Hindari kata dengan huruf dominan berlebihan (contoh XIX, XOX)
+    for _, count in pairs(charCount) do
+        if count >= (#word - 1) then
+            return false
+        end
+    end
+
+    return true
+end
+
 local function updateTopWords(input)
     topWords = {}
     input = input:lower()
@@ -607,7 +706,10 @@ local function updateTopWords(input)
     -- Filter kata yang cocok
     local matches = {}
     for _, w in ipairs(allWords) do
-        if w:sub(1, #input) == input and w ~= input and not usedWords[w] then
+        if w:sub(1, #input) == input
+        and w ~= input
+        and not usedWords[w]
+        and isSafeWord(w) then
             table.insert(matches, w)
         end
     end
@@ -634,7 +736,9 @@ local function updateTopWords(input)
         local distB = math.abs(#b - CONFIG.idealLength)
         scoreA = scoreA - distA
         scoreB = scoreB - distB
-
+        -- Kriteria 4: Prioritas panjang >= 6
+        if #a >= 6 then scoreA = scoreA + 25 end
+        if #b >= 6 then scoreB = scoreB + 25 end
         if scoreA == scoreB then
             return a < b
         end
@@ -658,21 +762,54 @@ local function updateTopWords(input)
 
     -- [LOGIKA AUTO TROLL DENGAN JEDA MANUSIA]
     if autoTrollEnabled and #topWords > 0 then
-        -- Ambil salah satu dari 3 teratas agar tidak selalu kata yang sama (biar random)
+	
+        if isTyping then return end
+		
         local range = math.min(3, #topWords)
         local targetWord = topWords[math.random(1, range)]
         
         if targetWord then
             usedWords[targetWord] = true
-            -- Jeda reaksi manusia (1.5 - 3 detik)
-            task.wait(math.random(15, 30) / 10) 
+            -- Dipercepat menjadi 0.03 sampai 0.07 detik
+            task.wait(math.random(12, 25) / 100)
             autoTypeWord(targetWord, searchBox.Text)
             searchBox.Text = "" 
             notify("🎯 Priority: " .. targetWord:upper())
         end
     end
 end
--- HAPUS BLOK LOGIKA AUTO TROLL YANG ADA DI LUAR (YANG DI ATAS -- BUTTON EVENTS)
+local function autoTriggerTroll(savedLetters)
+    -- Gunakan huruf yang diselamatkan, atau ambil dari searchBox
+    local input = savedLetters or searchBox.Text
+    if input == "" then return end
+    
+    input = input:lower()
+    local longWords = {}
+    
+    for _, w in ipairs(allWords) do
+        if w:sub(1, #input) == input
+        and not usedWords[w]
+        and #w >= 7
+        and isSafeWord(w) then
+            table.insert(longWords, w)
+        end
+    end
+    
+    if #longWords > 0 then
+	
+	    if isTyping then return end
+		
+        table.sort(longWords, function(a, b) return #a > #b end)
+        local trollWord = longWords[1]
+        usedWords[trollWord] = true
+        notify("😈 QUICK RE-ATTACK: " .. trollWord:upper())
+        
+        task.wait(0.2) 
+        -- PENTING: Parameter kedua diisi "" agar diketik DARI AWAL
+        autoTypeWord(trollWord, "") 
+    end
+end
+
 -- BUTTON EVENTS ===============================================================
 toggleButton.MouseButton1Click:Connect(function()
     consoleAutoComplete = not consoleAutoComplete
@@ -691,6 +828,9 @@ toggleButton.MouseButton1Click:Connect(function()
 end)
 
 trollButton.MouseButton1Click:Connect(function()
+
+    if isTyping then return end
+	
     if searchBox.Text == "" then
         notify("⚠️ Type some letters first!")
         return
@@ -700,7 +840,10 @@ trollButton.MouseButton1Click:Connect(function()
     local longWords = {}
     
     for _, w in ipairs(allWords) do
-        if w:sub(1, #input) == input and not usedWords[w] and #w >= 7 then
+        if w:sub(1, #input) == input
+        and not usedWords[w]
+        and #w >= 7
+        and isSafeWord(w) then
             table.insert(longWords, w)
         end
     end
@@ -742,6 +885,34 @@ autoTrollBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- PANIC BUTTON CLICK EVENT
+panicBtn.MouseButton1Click:Connect(function()
+    local lastLetters = searchBox.Text
+
+    panicDelete()
+
+    task.wait(0.35) -- beri waktu clear benar-benar selesai
+
+    if lastLetters ~= "" then
+        autoTriggerTroll(lastLetters)
+    end
+
+    notify("🚨 MANUAL RESET & ATTACK!")
+end)
+
+-- HOTKEY 'Delete' di keyboard
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Delete and not gameProcessed then
+        local lastLetters = searchBox.Text
+        panicDelete() 
+        task.wait(0.2) 
+        if lastLetters ~= "" then
+            autoTriggerTroll(lastLetters)
+        end
+        notify("🚨 PANIC RE-ATTACK: Box Cleared!")
+    end
+end)
+
 -- PAGINATION
 leftArrow.MouseButton1Click:Connect(function()
     if currentPage > 1 then
@@ -763,8 +934,17 @@ searchBox.Focused:Connect(function()
     selectionBox.Visible = false
 end)
 
+local searchDebounce = false
+
 searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if searchDebounce then return end
+    searchDebounce = true
+
+    task.wait(0.05) -- delay kecil
+
     updateTopWords(searchBox.Text)
+
+    searchDebounce = false
 end)
 
 -- HOTKEY SYSTEM (Sekarang menggunakan Ctrl Kanan)
