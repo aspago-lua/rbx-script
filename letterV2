@@ -949,18 +949,34 @@ end)
 
 -- HOTKEY SYSTEM (Sekarang menggunakan Ctrl Kanan)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    -- Mengganti Q menjadi RightControl
-    if input.KeyCode == Enum.KeyCode.RightControl and not gameProcessed then 
+    if input.KeyCode == Enum.KeyCode.RightControl and not gameProcessed then
+        
         minimized = not minimized
 
         if minimized then
             contentFrame.Visible = false
-            mainFrame.Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, 0, 40 * scaleFactor)
-            notify("📁 UI Minimized (Ctrl R)")
+
+            originalSize = mainFrame.Size
+            originalPosition = mainFrame.Position
+
+            mainFrame.Size = UDim2.new(0, 180, 0, 40 * scaleFactor)
+
+            -- tampilkan version saja
+            titleLabel.Text = "v" .. VERSION
+            titleLabel.Size = UDim2.new(1, 0, 1, 0)
+            titleLabel.Position = UDim2.new(0, 0, 0, 0)
+            titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+
         else
             contentFrame.Visible = true
+
             mainFrame.Size = originalSize
-            notify("📂 UI Restored (Ctrl R)")
+            mainFrame.Position = originalPosition
+
+            titleLabel.Text = "LendowSky x MasArip  •  v" .. VERSION
+            titleLabel.Size = UDim2.new(1, -80, 1, 0)
+            titleLabel.Position = UDim2.new(0, 40, 0, 0)
+            titleLabel.TextXAlignment = Enum.TextXAlignment.Center
         end
     end
 end)
