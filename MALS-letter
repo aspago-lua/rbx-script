@@ -24,19 +24,19 @@ local MAX_CPM_BLATANT = 3000
 
 math.randomseed(os.time())
 
--- TEMA BARU: macOS Dark Mode (Tahoe / Monterey)
+-- TEMA BARU: macOS Dark Mode
 local THEME = {
-    Background = Color3.fromRGB(30, 30, 30), -- Latar utama macOS Dark
-    ItemBG = Color3.fromRGB(45, 45, 45),     -- Elemen/Tombol lebih terang
-    Accent = Color3.fromRGB(10, 132, 255),   -- macOS Default Blue Accent
-    Text = Color3.fromRGB(255, 255, 255),    -- White
-    SubText = Color3.fromRGB(152, 152, 157), -- macOS Secondary Gray Text
-    Success = Color3.fromRGB(50, 215, 75),   -- macOS Green
-    Warning = Color3.fromRGB(255, 159, 10),  -- macOS Orange/Warning
-    Slider = Color3.fromRGB(60, 60, 65),     -- Jalur slider
-    GlassAlpha = 0.05,                       -- Sangat pekat (95% solid)
-    ItemAlpha = 0.15,                        
-    Stroke = Color3.fromRGB(255, 255, 255)   -- Outline kaca tipis
+    Background = Color3.fromRGB(30, 30, 30),
+    ItemBG = Color3.fromRGB(45, 45, 45),
+    Accent = Color3.fromRGB(10, 132, 255),
+    Text = Color3.fromRGB(255, 255, 255),
+    SubText = Color3.fromRGB(152, 152, 157),
+    Success = Color3.fromRGB(50, 215, 75),
+    Warning = Color3.fromRGB(255, 159, 10),
+    Slider = Color3.fromRGB(60, 60, 65),
+    GlassAlpha = 0.05,
+    ItemAlpha = 0.15,
+    Stroke = Color3.fromRGB(255, 255, 255)
 }
 
 local function ColorToRGB(c)
@@ -60,7 +60,7 @@ end
 local ConfigFile = "WordHelper_Config.json"
 local Config = {
     CPM = 550, Blatant = false, Humanize = true, FingerModel = true,
-    SortMode = "Random", SuffixMode = "", LengthMode = 0, AutoPlay = false,
+    SortMode = "Smart", SuffixMode = "", LengthMode = 0, AutoPlay = false, AutoSkill = false,
     AutoJoin = false, AutoJoinSettings = { _1v1 = true, _4p = true, _8p = true },
     PanicMode = true, ShowKeyboard = false, ErrorRate = 5, ThinkDelay = 0.8,
     RiskyMistakes = false, CustomWords = {}, MinTypeSpeed = 50, MaxTypeSpeed = 3000,
@@ -80,11 +80,11 @@ end
 LoadConfig()
 
 local currentCPM, isBlatant, useHumanization, useFingerModel, sortMode = Config.CPM, Config.Blatant, Config.Humanize, Config.FingerModel, Config.SortMode
-local suffixMode, lengthMode, autoPlay, autoJoin, panicMode = Config.SuffixMode or "", Config.LengthMode or 0, Config.AutoPlay, Config.AutoJoin, Config.PanicMode
+local suffixMode, lengthMode, autoPlay, autoSkill, autoJoin, panicMode = Config.SuffixMode or "", Config.LengthMode or 0, Config.AutoPlay, Config.AutoSkill, Config.AutoJoin, Config.PanicMode
 local showKeyboard, errorRate, thinkDelayCurrent, riskyMistakes, keyboardLayout = Config.ShowKeyboard, Config.ErrorRate, Config.ThinkDelay, Config.RiskyMistakes, Config.KeyboardLayout or "QWERTY"
 
 local isTyping, isAutoPlayScheduled, lastTypingStart, runConn, inputConn, logConn, unloaded = false, false, 0, nil, nil, nil, false
-local isMyTurnLogDetected, logRequiredLetters, turnExpiryTime = false, "", 0
+local isMyTurnLogDetected, logRequiredLetters, turnExpiryTime, autoSkillUsed = false, "", 0, false
 local Blacklist, UsedWords, RandomOrderCache, RandomPriority = {}, {}, {}, {}
 local lastDetected, lastLogicUpdate, lastAutoJoinCheck, lastWordCheck = "---", 0, 0, 0
 local cachedDetected, cachedCensored = "", false
@@ -101,7 +101,6 @@ logConn = LogService.MessageOut:Connect(function(message, type)
     end
 end)
 
--- URL Kamus Baru
 local DICTIONARY_URLS = {
     "https://raw.githubusercontent.com/dwyl/english-words/refs/heads/master/words_dictionary.json",
     "https://raw.githubusercontent.com/first20hours/google-10000-english/master/google-10000-english-usa-no-swears.txt"
@@ -146,9 +145,8 @@ local function UpdateStatus(text, color)
     game:GetService("RunService").RenderStepped:Wait()
 end
 
--- Sistem Fetch Kamus Ganda (JSON & TXT)
 local function FetchWords()
-    if isfile and isfile(fileName) then return end -- Skip jika sudah pernah diunduh
+    if isfile and isfile(fileName) then return end
     
     UpdateStatus("Downloading new dictionaries...", THEME.Warning)
     local allWordsMap = {}
@@ -197,7 +195,6 @@ local function LoadList(fname)
                 if #clean > 0 and not SeenWords[clean] then
                     SeenWords[clean] = true; table.insert(Words, clean)
                 end
-                -- Mencegah lag parah saat meload ratusan ribu kata
                 if i % 15000 == 0 then game:GetService("RunService").RenderStepped:Wait() end
             end
             UpdateStatus("Loaded " .. #Words .. " words!", THEME.Success)
@@ -241,6 +238,19 @@ end
 
 local HardLetterScores = { x=10, z=9, q=9, j=8, v=6, k=5, b=4, f=3, w=3, y=2, g=2, p=2 }
 local function GetKillerScore(word) return HardLetterScores[word:sub(-1)] or 0 end
+
+-- FUNGSI SKOR ADVANCED (SMART SORT)
+local function GetAdvancedScore(word)
+    local score = 0
+    score = score + ((HardLetterScores[word:sub(-1)] or 0) * 5)
+    score = score + (#word * 2)
+    local cons, cCount = {}, 0
+    for c in word:gmatch("[bcdfghjklmnpqrstvwxyz]") do
+        if not cons[c] then cons[c] = true; cCount = cCount + 1 end
+    end
+    if cCount >= 2 then score = score + 20 end
+    return score
+end
 
 local function Tween(obj, props, time)
     TweenService:Create(obj, TweenInfo.new(time or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
@@ -369,10 +379,7 @@ local function EnableDragging(frame)
     end)
 end
 
--- ===========================
--- MAIN UI STRUCTURE (macOS Style)
--- ===========================
-
+-- MAIN UI STRUCTURE
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 640, 0, 470)
@@ -386,7 +393,6 @@ ApplyGlassmorphism(MainFrame, 12, 0.8)
 local Header = Instance.new("Frame", MainFrame)
 Header.Size = UDim2.new(1, 0, 0, 45); Header.BackgroundTransparency = 1
 
--- macOS Controls di sebelah KIRI
 local ControlContainer = Instance.new("Frame", Header)
 ControlContainer.Size = UDim2.new(0, 60, 1, 0); ControlContainer.Position = UDim2.new(0, 15, 0, 0); ControlContainer.BackgroundTransparency = 1
 
@@ -402,7 +408,6 @@ local GreenBtn = Instance.new("TextButton", ControlContainer)
 GreenBtn.Text = ""; GreenBtn.Size = UDim2.new(0, 13, 0, 13); GreenBtn.Position = UDim2.new(0, 44, 0.5, -6.5)
 GreenBtn.BackgroundColor3 = Color3.fromRGB(39, 201, 63); Instance.new("UICorner", GreenBtn).CornerRadius = UDim.new(1, 0)
 
--- Title di TENGAH
 local Title = Instance.new("TextLabel", Header)
 Title.Text = "MALS Hub V3"
 Title.Font = Enum.Font.GothamMedium; Title.TextSize = 15
@@ -418,6 +423,27 @@ RightPanel.Size = UDim2.new(0, 320, 1, -45); RightPanel.Position = UDim2.new(0, 
 local Divider = Instance.new("Frame", RightPanel)
 Divider.Size = UDim2.new(0, 1, 1, -20); Divider.Position = UDim2.new(0, 0, 0, 10)
 Divider.BackgroundColor3 = THEME.Stroke; Divider.BackgroundTransparency = 0.9
+
+-- CREDITS
+local CreditLeft = Instance.new("TextLabel", RightPanel)
+CreditLeft.Text = "Script By: Mas Arip"
+CreditLeft.Font = Enum.Font.Gotham
+CreditLeft.TextSize = 10
+CreditLeft.TextColor3 = THEME.SubText
+CreditLeft.Size = UDim2.new(0.5, -15, 0, 20)
+CreditLeft.Position = UDim2.new(0, 15, 1, -25)
+CreditLeft.BackgroundTransparency = 1
+CreditLeft.TextXAlignment = Enum.TextXAlignment.Left
+
+local CreditRight = Instance.new("TextLabel", RightPanel)
+CreditRight.Text = "Thanks To: LendowSky"
+CreditRight.Font = Enum.Font.Gotham
+CreditRight.TextSize = 10
+CreditRight.TextColor3 = THEME.SubText
+CreditRight.Size = UDim2.new(0.5, -15, 0, 20)
+CreditRight.Position = UDim2.new(0.5, 0, 1, -25)
+CreditRight.BackgroundTransparency = 1
+CreditRight.TextXAlignment = Enum.TextXAlignment.Right
 
 -- LEFT PANEL ITEMS
 local StatusFrame = Instance.new("Frame", LeftPanel)
@@ -494,6 +520,12 @@ local function BuildSlider(parent, text, yPos, color)
     local fill = Instance.new("Frame", bg)
     fill.Size = UDim2.new(0.5, 0, 1, 0); fill.BackgroundColor3 = color or THEME.Accent
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("Frame", fill)
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = UDim2.new(1, -6, 0.5, -6)
+    knob.BackgroundColor3 = THEME.Text
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
 
     local btn = Instance.new("TextButton", bg)
     btn.Size = UDim2.new(1,0,1,0); btn.BackgroundTransparency = 1; btn.Text = ""
@@ -522,56 +554,103 @@ SetupSlider(ThinkBtn, ThinkBg, ThinkFill, function(pct)
     ThinkFill.Size = UDim2.new(pct, 0, 1, 0); ThinkLabel.Text = string.format("Think: %.2fs", thinkDelayCurrent)
 end)
 
-local function CreateToggle(text, pos, callback)
+local function CreateToggle(text, pos, size, getState, callback)
     local btn = Instance.new("TextButton", TogglesFrame)
-    btn.Text = text; btn.Font = Enum.Font.GothamMedium; btn.TextSize = 11; btn.TextColor3 = THEME.Success
-    btn.BackgroundColor3 = THEME.ItemBG; btn.BackgroundTransparency = THEME.ItemAlpha
-    btn.Size = UDim2.new(0, 85, 0, 26); btn.Position = pos
+    btn.Text = ""
+    btn.BackgroundColor3 = THEME.ItemBG
+    btn.BackgroundTransparency = THEME.ItemAlpha
+    btn.Size = size or UDim2.new(0, 90, 0, 26)
+    btn.Position = pos
     ApplyGlassmorphism(btn, 6, 0.9)
     
+    local indicator = Instance.new("Frame", btn)
+    indicator.Size = UDim2.new(0, 10, 0, 10)
+    indicator.Position = UDim2.new(0, 8, 0.5, -5)
+    indicator.BackgroundTransparency = 1
+    local stroke = Instance.new("UIStroke", indicator)
+    stroke.Thickness = 2
+    Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0)
+    
+    local lbl = Instance.new("TextLabel", btn)
+    lbl.Text = text
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 11
+    lbl.TextColor3 = THEME.Text
+    lbl.Size = UDim2.new(1, -24, 1, 0)
+    lbl.Position = UDim2.new(0, 24, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local function updateState()
+        local st = getState()
+        stroke.Color = st and THEME.Success or Color3.fromRGB(255, 69, 58)
+    end
+    updateState()
+    
     btn.MouseButton1Click:Connect(function()
-        local newState, newText, newColor = callback()
-        btn.Text = newText; btn.TextColor3 = newColor; SaveConfig()
+        callback()
+        updateState()
+        SaveConfig()
     end)
     return btn
 end
 
-local HumanizeBtn = CreateToggle("Humanize: "..(useHumanization and "ON" or "OFF"), UDim2.new(0, 15, 0, 5), function()
-    useHumanization = not useHumanization; Config.Humanize = useHumanization
-    return useHumanization, "Humanize: "..(useHumanization and "ON" or "OFF"), useHumanization and THEME.Success or Color3.fromRGB(255, 69, 58)
-end)
-HumanizeBtn.TextColor3 = useHumanization and THEME.Success or Color3.fromRGB(255, 69, 58)
+local HumanizeBtn = CreateToggle("Humanize", UDim2.new(0, 15, 0, 5), UDim2.new(0, 90, 0, 26), 
+    function() return useHumanization end, 
+    function() useHumanization = not useHumanization; Config.Humanize = useHumanization end)
 
-local FingerBtn = CreateToggle("10-Finger: "..(useFingerModel and "ON" or "OFF"), UDim2.new(0, 105, 0, 5), function()
-    useFingerModel = not useFingerModel; Config.FingerModel = useFingerModel
-    return useFingerModel, "10-Finger: "..(useFingerModel and "ON" or "OFF"), useFingerModel and THEME.Success or Color3.fromRGB(255, 69, 58)
-end)
-FingerBtn.TextColor3 = useFingerModel and THEME.Success or Color3.fromRGB(255, 69, 58)
+local FingerBtn = CreateToggle("10-Finger", UDim2.new(0, 110, 0, 5), UDim2.new(0, 85, 0, 26), 
+    function() return useFingerModel end, 
+    function() useFingerModel = not useFingerModel; Config.FingerModel = useFingerModel end)
 
-local KeyboardBtn = CreateToggle("Keyboard: "..(showKeyboard and "ON" or "OFF"), UDim2.new(0, 195, 0, 5), function()
-    showKeyboard = not showKeyboard; Config.ShowKeyboard = showKeyboard; KeyboardFrame.Visible = showKeyboard
-    return showKeyboard, "Keyboard: "..(showKeyboard and "ON" or "OFF"), showKeyboard and THEME.Success or Color3.fromRGB(255, 69, 58)
-end)
-KeyboardBtn.TextColor3 = showKeyboard and THEME.Success or Color3.fromRGB(255, 69, 58)
+local KeyboardBtn = CreateToggle("Keyboard", UDim2.new(0, 200, 0, 5), UDim2.new(0, 80, 0, 26), 
+    function() return showKeyboard end, 
+    function() showKeyboard = not showKeyboard; Config.ShowKeyboard = showKeyboard; KeyboardFrame.Visible = showKeyboard end)
 
-local SortBtn = CreateToggle("Sort: "..sortMode, UDim2.new(0, 15, 0, 36), function()
-    if sortMode == "Random" then sortMode = "Shortest" elseif sortMode == "Shortest" then sortMode = "Longest" elseif sortMode == "Longest" then sortMode = "Killer" else sortMode = "Random" end
-    Config.SortMode = sortMode; lastDetected = "---"
-    return true, "Sort: "..sortMode, THEME.Accent
-end)
-SortBtn.TextColor3 = THEME.Accent; SortBtn.Size = UDim2.new(0, 130, 0, 26)
+local function CreateDropdown(parent, text, options, default, callback)
+    local container = Instance.new("Frame", parent)
+    container.Size = UDim2.new(0, 130, 0, 26); container.BackgroundColor3 = THEME.ItemBG; container.BackgroundTransparency = THEME.ItemAlpha; container.ZIndex = 10
+    ApplyGlassmorphism(container, 6, 0.9)
+    
+    local mainBtn = Instance.new("TextButton", container)
+    mainBtn.Size = UDim2.new(1, 0, 1, 0); mainBtn.BackgroundTransparency = 1; mainBtn.Text = text .. ": " .. default
+    mainBtn.Font = Enum.Font.GothamMedium; mainBtn.TextSize = 11; mainBtn.TextColor3 = THEME.Text; mainBtn.ZIndex = 11
 
-local AutoBtn = CreateToggle("Auto Play: "..(autoPlay and "ON" or "OFF"), UDim2.new(0, 150, 0, 36), function()
-    autoPlay = not autoPlay; Config.AutoPlay = autoPlay
-    return autoPlay, "Auto Play: "..(autoPlay and "ON" or "OFF"), autoPlay and THEME.Success or Color3.fromRGB(255, 69, 58)
-end)
-AutoBtn.TextColor3 = autoPlay and THEME.Success or Color3.fromRGB(255, 69, 58); AutoBtn.Size = UDim2.new(0, 130, 0, 26)
+    local listFrame = Instance.new("Frame", container)
+    listFrame.Size = UDim2.new(1, 0, 0, #options * 26); listFrame.Position = UDim2.new(0, 0, 1, 2)
+    listFrame.BackgroundColor3 = THEME.ItemBG; listFrame.Visible = false; listFrame.ZIndex = 20
+    ApplyGlassmorphism(listFrame, 6, 0.9)
+    
+    local isOpen = false
+    mainBtn.MouseButton1Click:Connect(function() isOpen = not isOpen; listFrame.Visible = isOpen end)
+    
+    for i, opt in ipairs(options) do
+        local btn = Instance.new("TextButton", listFrame)
+        btn.Size = UDim2.new(1, 0, 0, 26); btn.Position = UDim2.new(0, 0, 0, (i-1)*26)
+        btn.BackgroundTransparency = 1; btn.Text = opt; btn.Font = Enum.Font.Gotham; btn.TextSize = 11; btn.TextColor3 = THEME.Text; btn.ZIndex = 21
+        btn.MouseButton1Click:Connect(function() mainBtn.Text = text .. ": " .. opt; isOpen = false; listFrame.Visible = false; callback(opt) end)
+    end
+    return container
+end
 
-local AutoJoinBtn = CreateToggle("Auto Join: "..(autoJoin and "ON" or "OFF"), UDim2.new(0, 15, 0, 67), function()
-    autoJoin = not autoJoin; Config.AutoJoin = autoJoin
-    return autoJoin, "Auto Join: "..(autoJoin and "ON" or "OFF"), autoJoin and THEME.Success or Color3.fromRGB(255, 69, 58)
+-- NEW: Dropdown dengan opsi Smart
+local SortDropdown = CreateDropdown(TogglesFrame, "Sort", {"Smart", "Random", "Shortest", "Longest", "Killer"}, sortMode, function(val)
+    sortMode = val; Config.SortMode = sortMode; lastDetected = "---"; SaveConfig()
 end)
-AutoJoinBtn.TextColor3 = autoJoin and THEME.Success or Color3.fromRGB(255, 69, 58); AutoJoinBtn.Size = UDim2.new(0, 265, 0, 26)
+SortDropdown.Position = UDim2.new(0, 15, 0, 36)
+
+-- NEW: Tombol Auto Skill simetris dengan Sort
+local AutoSkillBtn = CreateToggle("Auto Skill", UDim2.new(0, 150, 0, 36), UDim2.new(0, 130, 0, 26), 
+    function() return autoSkill end, 
+    function() autoSkill = not autoSkill; Config.AutoSkill = autoSkill end)
+
+local AutoJoinBtn = CreateToggle("Auto Join", UDim2.new(0, 15, 0, 67), UDim2.new(0, 130, 0, 26), 
+    function() return autoJoin end, 
+    function() autoJoin = not autoJoin; Config.AutoJoin = autoJoin end)
+
+local AutoPlayBtn = CreateToggle("Auto Play", UDim2.new(0, 150, 0, 67), UDim2.new(0, 130, 0, 26), 
+    function() return autoPlay end, 
+    function() autoPlay = not autoPlay; Config.AutoPlay = autoPlay end)
 
 local function CreateCheckbox(text, pos, key)
     local container = Instance.new("TextButton", TogglesFrame)
@@ -582,11 +661,11 @@ local function CreateCheckbox(text, pos, key)
     
     local box = Instance.new("Frame", container)
     box.Size = UDim2.new(0, 14, 0, 14); box.Position = UDim2.new(0, 5, 0.5, -7); box.BackgroundColor3 = THEME.Slider
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(1, 0)
     
     local check = Instance.new("Frame", box)
     check.Size = UDim2.new(0, 8, 0, 8); check.Position = UDim2.new(0.5, -4, 0.5, -4); check.BackgroundColor3 = THEME.Success; check.Visible = Config.AutoJoinSettings[key]
-    Instance.new("UICorner", check).CornerRadius = UDim.new(0, 2)
+    Instance.new("UICorner", check).CornerRadius = UDim.new(1, 0)
     
     local lbl = Instance.new("TextLabel", container)
     lbl.Text = text; lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextColor3 = THEME.SubText
@@ -606,43 +685,13 @@ CreateCheckbox("1v1", UDim2.new(0, 15, 0, 98), "_1v1")
 CreateCheckbox("4 Player", UDim2.new(0, 110, 0, 98), "_4p")
 CreateCheckbox("8 Player", UDim2.new(0, 205, 0, 98), "_8p")
 
-local BlatantBtn = CreateToggle("Blatant Mode: "..(isBlatant and "ON" or "OFF"), UDim2.new(0, 15, 0, 129), function()
-    isBlatant = not isBlatant; Config.Blatant = isBlatant
-    return isBlatant, "Blatant Mode: "..(isBlatant and "ON" or "OFF"), isBlatant and Color3.fromRGB(255, 69, 58) or THEME.SubText
-end)
-BlatantBtn.TextColor3 = isBlatant and Color3.fromRGB(255, 69, 58) or THEME.SubText; BlatantBtn.Size = UDim2.new(0, 130, 0, 26)
+local BrutalBtn = CreateToggle("Brutal Mode", UDim2.new(0, 15, 0, 129), UDim2.new(0, 130, 0, 26), 
+    function() return isBlatant end, 
+    function() isBlatant = not isBlatant; Config.Blatant = isBlatant end)
 
-local RiskyBtn = CreateToggle("Risky Mistakes: "..(riskyMistakes and "ON" or "OFF"), UDim2.new(0, 150, 0, 129), function()
-    riskyMistakes = not riskyMistakes; Config.RiskyMistakes = riskyMistakes
-    return riskyMistakes, "Risky Mistakes: "..(riskyMistakes and "ON" or "OFF"), riskyMistakes and Color3.fromRGB(255, 69, 58) or THEME.SubText
-end)
-RiskyBtn.TextColor3 = riskyMistakes and Color3.fromRGB(255, 69, 58) or THEME.SubText; RiskyBtn.Size = UDim2.new(0, 130, 0, 26)
-
-local function CreateDropdown(parent, text, options, default, callback)
-    local container = Instance.new("Frame", parent)
-    container.Size = UDim2.new(0, 130, 0, 26); container.BackgroundColor3 = THEME.ItemBG; container.BackgroundTransparency = THEME.ItemAlpha; container.ZIndex = 10
-    ApplyGlassmorphism(container, 6, 0.9)
-    
-    local mainBtn = Instance.new("TextButton", container)
-    mainBtn.Size = UDim2.new(1, 0, 1, 0); mainBtn.BackgroundTransparency = 1; mainBtn.Text = text .. ": " .. default
-    mainBtn.Font = Enum.Font.GothamMedium; mainBtn.TextSize = 11; mainBtn.TextColor3 = THEME.Accent; mainBtn.ZIndex = 11
-
-    local listFrame = Instance.new("Frame", container)
-    listFrame.Size = UDim2.new(1, 0, 0, #options * 26); listFrame.Position = UDim2.new(0, 0, 1, 2)
-    listFrame.BackgroundColor3 = THEME.ItemBG; listFrame.Visible = false; listFrame.ZIndex = 20
-    ApplyGlassmorphism(listFrame, 6, 0.9)
-    
-    local isOpen = false
-    mainBtn.MouseButton1Click:Connect(function() isOpen = not isOpen; listFrame.Visible = isOpen end)
-    
-    for i, opt in ipairs(options) do
-        local btn = Instance.new("TextButton", listFrame)
-        btn.Size = UDim2.new(1, 0, 0, 26); btn.Position = UDim2.new(0, 0, 0, (i-1)*26)
-        btn.BackgroundTransparency = 1; btn.Text = opt; btn.Font = Enum.Font.Gotham; btn.TextSize = 11; btn.TextColor3 = THEME.Text; btn.ZIndex = 21
-        btn.MouseButton1Click:Connect(function() mainBtn.Text = text .. ": " .. opt; isOpen = false; listFrame.Visible = false; callback(opt) end)
-    end
-    return container
-end
+local TypoBtn = CreateToggle("Typo Mode", UDim2.new(0, 150, 0, 129), UDim2.new(0, 130, 0, 26), 
+    function() return riskyMistakes end, 
+    function() riskyMistakes = not riskyMistakes; Config.RiskyMistakes = riskyMistakes end)
 
 local LayoutDropdown = CreateDropdown(TogglesFrame, "Layout", {"QWERTY", "QWERTZ", "AZERTY"}, keyboardLayout, function(val)
     keyboardLayout = val; Config.KeyboardLayout = keyboardLayout; if GenerateKeyboard then GenerateKeyboard() end; SaveConfig()
@@ -667,7 +716,6 @@ ServerBrowserBtn.TextColor3 = THEME.Text; ServerBrowserBtn.BackgroundColor3 = TH
 ServerBrowserBtn.Size = UDim2.new(0, 265, 0, 26); ServerBrowserBtn.Position = UDim2.new(0, 15, 0, 222)
 ApplyGlassmorphism(ServerBrowserBtn, 6, 0.9)
 
--- Window Navigations logic
 local isCompact, isMinimized = false, false
 
 GreenBtn.MouseButton1Click:Connect(function()
@@ -694,7 +742,6 @@ RedBtn.MouseButton1Click:Connect(function()
     if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
 end)
 
--- Mac UI Builder for Sub-Windows
 local function AddMacHeader(parentFrame, titleText, closeCallback)
     local header = Instance.new("TextLabel", parentFrame)
     header.Text = titleText; header.Font = Enum.Font.GothamMedium; header.TextSize = 14
@@ -719,7 +766,6 @@ local function AddMacHeader(parentFrame, titleText, closeCallback)
     return header
 end
 
--- Keyboard Window
 local KeyboardFrame = Instance.new("Frame", ScreenGui)
 KeyboardFrame.Name = "KeyboardFrame"; KeyboardFrame.Size = UDim2.new(0, 400, 0, 160)
 KeyboardFrame.Position = UDim2.new(0.1, 0, 0.5, -80); KeyboardFrame.BackgroundColor3 = THEME.Background
@@ -772,7 +818,6 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--- Custom Words Manager
 local CustomWordsFrame = Instance.new("Frame", ScreenGui)
 CustomWordsFrame.Name = "CustomWordsFrame"; CustomWordsFrame.Size = UDim2.new(0, 250, 0, 350)
 CustomWordsFrame.Position = UDim2.new(0.5, -125, 0.5, -175); CustomWordsFrame.BackgroundColor3 = THEME.Background
@@ -864,7 +909,6 @@ CWAddBtn.MouseButton1Click:Connect(function()
 end)
 RefreshCustomWords()
 
--- Server Browser (Server Hub)
 local ServerFrame = Instance.new("Frame", ScreenGui)
 ServerFrame.Name = "ServerBrowser"; ServerFrame.Size = UDim2.new(0, 350, 0, 400)
 ServerFrame.Position = UDim2.new(0.5, -175, 0.5, -200); ServerFrame.BackgroundColor3 = THEME.Background
@@ -915,7 +959,7 @@ local function FetchServers()
                         
                         join.MouseButton1Click:Connect(function()
                             join.Text = "Joining..."; ShowToast("Teleporting...", "success")
-                            if queue_on_teleport then queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/skrylor/Last-Letter-Script/refs/heads/main/Last%20Letter.lua"))()') end
+                            if queue_on_teleport then queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()') end
                             task.spawn(function()
                                 local succ, err = pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, srv.id, Players.LocalPlayer) end)
                                 if not succ then join.Text = "Failed"; ShowToast("Teleport Failed: " .. tostring(err), "error"); task.wait(2); join.Text = "Join" end
@@ -934,7 +978,6 @@ SBSortBtn.MouseButton1Click:Connect(function() ServerSortMode = (ServerSortMode 
 SBRefresh.MouseButton1Click:Connect(FetchServers)
 ServerBrowserBtn.MouseButton1Click:Connect(function() ServerFrame.Visible = not ServerFrame.Visible; ServerFrame.Parent = nil; ServerFrame.Parent = ScreenGui; if ServerFrame.Visible then FetchServers() end end)
 
--- Word Browser
 do
     local WordBrowserFrame = Instance.new("Frame", ScreenGui)
     WordBrowserFrame.Name = "WordBrowser"; WordBrowserFrame.Size = UDim2.new(0, 300, 0, 400)
@@ -1118,7 +1161,11 @@ function SmartType(targetWord, currentDetected, isCorrection, bypassTurn)
             local finalCheck = GetGameTextBox()
             if not riskyMistakes then
                 task.wait(0.1); finalCheck = GetGameTextBox()
-                if finalCheck and finalCheck.Text ~= targetWord then StatusText.Text = "Typing mismatch detected!"; StatusText.TextColor3 = THEME.Warning; Backspace(#finalCheck.Text); isTyping = false; forceUpdateList = true; return end
+                if finalCheck and finalCheck.Text ~= targetWord then 
+                    StatusText.Text = "Typing mismatch detected!"; StatusText.TextColor3 = THEME.Warning; 
+                    if finalCheck.TextEditable then finalCheck.Text = "" else Backspace(20) end
+                    isTyping = false; forceUpdateList = true; return 
+                end
             end
 
             PressEnter(); local verifyStart, accepted = tick(), false
@@ -1129,7 +1176,7 @@ function SmartType(targetWord, currentDetected, isCorrection, bypassTurn)
                 for k, list in pairs(RandomOrderCache) do for i = #list, 1, -1 do if list[i] == targetWord then table.remove(list, i) end end end
                 StatusText.Text = "Rejected: removed '" .. targetWord .. "'"; StatusText.TextColor3 = THEME.Warning
                 local focused = UserInputService:GetFocusedTextBox()
-                if focused and focused:IsDescendantOf(game) and focused.TextEditable then focused.Text = "" else Backspace(#targetWord + 5) end
+                if focused and focused:IsDescendantOf(game) and focused.TextEditable then focused.Text = "" else Backspace(20) end
                 lastDetected = "---"; isTyping = false; forceUpdateList = true; return
             else
                 StatusText.Text = "Word Cleared (Corrected)"; StatusText.TextColor3 = THEME.SubText
@@ -1145,18 +1192,32 @@ function SmartType(targetWord, currentDetected, isCorrection, bypassTurn)
                 if errorRate > 0 and (math.random() < (errorRate / 100)) then
                     local typoChar
                     repeat typoChar = letters:sub(math.random(1, #letters), math.random(1, #letters)) until typoChar ~= ch
-                    SimulateKey(typoChar); if riskyMistakes then task.wait(0.05 + math.random() * 0.1); PressEnter() end
+                    SimulateKey(typoChar)
+                    
+                    if riskyMistakes then 
+                        -- MODIFIED: Jeda ditambahkan sebelum dan sesudah Enter di mode Typo agar tidak hang/bengong
+                        task.wait(0.4 + math.random() * 0.3)
+                        PressEnter()
+                        task.wait(0.5 + math.random() * 0.3)
+                    end 
+                    
                     task.wait(CalculateDelayForKeys(lastKey, typoChar)); lastKey = typoChar
                     local realize = thinkDelayCurrent * (0.6 + math.random() * 0.8); task.wait(realize)
                     SimulateKey(Enum.KeyCode.Backspace); lastKey = nil; task.wait(0.05 + math.random() * 0.08)
                     SimulateKey(ch); task.wait(CalculateDelayForKeys(lastKey, ch)); lastKey = ch
-                else SimulateKey(ch); task.wait(CalculateDelayForKeys(lastKey, ch)); lastKey = ch end
+                else 
+                    SimulateKey(ch); task.wait(CalculateDelayForKeys(lastKey, ch)); lastKey = ch 
+                end
                 if useHumanization and math.random() < 0.03 then task.wait(0.12 + math.random() * 0.5) end
             end
 
             if not riskyMistakes then
                 task.wait(0.1); local finalCheck = GetGameTextBox()
-                if finalCheck and finalCheck.Text ~= targetWord then StatusText.Text = "Typing mismatch detected!"; StatusText.TextColor3 = THEME.Warning; Backspace(#finalCheck.Text); isTyping = false; forceUpdateList = true; return end
+                if finalCheck and finalCheck.Text ~= targetWord then 
+                    StatusText.Text = "Typing mismatch detected!"; StatusText.TextColor3 = THEME.Warning; 
+                    if finalCheck.TextEditable then finalCheck.Text = "" else Backspace(20) end
+                    isTyping = false; forceUpdateList = true; return 
+                end
             end
 
             PressEnter(); local verifyStart, accepted = tick(), false
@@ -1166,13 +1227,17 @@ function SmartType(targetWord, currentDetected, isCorrection, bypassTurn)
                 local postCheck = GetGameTextBox()
                 if postCheck and postCheck.Text == targetWord then
                      StatusText.Text = "Enter failed? Retrying..."; PressEnter(); task.wait(0.5)
-                     if GetCurrentGameWord() == currentDetected then StatusText.Text = "Submission Failed (Lag?)"; StatusText.TextColor3 = THEME.Warning; Backspace(#targetWord); isTyping = false; forceUpdateList = true; return end
+                     if GetCurrentGameWord() == currentDetected then 
+                        StatusText.Text = "Submission Failed (Lag?)"; StatusText.TextColor3 = THEME.Warning
+                        if postCheck.TextEditable then postCheck.Text = "" else Backspace(20) end
+                        isTyping = false; forceUpdateList = true; return 
+                     end
                 end
                 Blacklist[targetWord] = true
                 for k, list in pairs(RandomOrderCache) do for i = #list, 1, -1 do if list[i] == targetWord then table.remove(list, i) end end end
                 StatusText.Text = "Rejected: removed '" .. targetWord .. "'"; StatusText.TextColor3 = THEME.Warning
                 local focused = UserInputService:GetFocusedTextBox()
-                if focused and focused:IsDescendantOf(game) and focused.TextEditable then focused.Text = "" else Backspace(#targetWord + 5) end
+                if focused and focused:IsDescendantOf(game) and focused.TextEditable then focused.Text = "" else Backspace(20) end
                 isTyping = false; lastDetected = "---"; forceUpdateList = true
                 task.spawn(function() task.wait(0.1); local _, req = GetTurnInfo(); UpdateList(currentDetected, req) end)
                 return
@@ -1223,6 +1288,9 @@ UpdateList = function(detectedText, requiredLetter)
         if bucket then
             local checkWord = function(w)
                 if Blacklist[w] or UsedWords[w] then return end
+                -- MENGABAIKAN KATA DENGAN KARAKTER BERULANG SATU JENIS (contoh: "aaa")
+                if #w > 1 and w:match("^(.)%1*$") then return end
+                
                 if suffixMode ~= "" and w:sub(-#suffixMode) ~= suffixMode then return end
                 local isLengthMatch = true
                 if not tryFallbackLengths and lengthMode > 0 then isLengthMatch = (#w == lengthMode) elseif tryFallbackLengths and lengthMode > 0 then isLengthMatch = true end
@@ -1270,7 +1338,8 @@ UpdateList = function(detectedText, requiredLetter)
     if #matches > 0 then
         if sortMode == "Longest" then table.sort(matches, function(a, b) return #a > #b end)
         elseif sortMode == "Shortest" then table.sort(matches, function(a, b) return #a < #b end)
-        elseif sortMode == "Killer" then table.sort(matches, function(a, b) local sA, sB = GetKillerScore(a), GetKillerScore(b); if sA == sB then return #a < #b end return sA > sB end) end
+        elseif sortMode == "Killer" then table.sort(matches, function(a, b) local sA, sB = GetKillerScore(a), GetKillerScore(b); if sA == sB then return #a < #b end return sA > sB end) 
+        elseif sortMode == "Smart" then table.sort(matches, function(a, b) return GetAdvancedScore(a) > GetAdvancedScore(b) end) end
     end
     
     local displayList = {}; for i = 1, math.min(40, #matches) do table.insert(displayList, matches[i]) end
@@ -1351,12 +1420,26 @@ runConn = RunService.RenderStepped:Connect(function()
         if (now - lastWordCheck) > 0.05 then cachedDetected, cachedCensored = GetCurrentGameWord(frame); lastWordCheck = now end
         local detected, censored = cachedDetected, cachedCensored
 
+        -- FITUR AUTO SKILL (SPASI OTOMATIS SAAT < 1.5 DETIK)
+        if autoSkill and isVisible and isMyTurn and seconds and seconds <= 1.5 and not autoSkillUsed then
+            autoSkillUsed = true
+            SimulateKey(Enum.KeyCode.Space)
+            ShowToast("Auto Skill Activated!", "success")
+        end
+
+        -- PANIC MODE (HAPUS LALU KETIK CEPAT SAAT < 1.5 DETIK JIKA BELUM TYPING)
         if isVisible and isMyTurn and not isTyping and seconds and seconds < 1.5 then
             local bucket = Buckets[(requiredLetter or ""):lower()]
             if bucket then
                 local bestWord, bestLen = nil, 999
                 for _, w in ipairs(bucket) do if not Blacklist[w] and not UsedWords[w] and w:sub(1, #detected) == detected and #w < bestLen then bestWord, bestLen = w, #w end end
-                if bestWord then StatusText.Text = "PANIC SAVE!"; StatusText.TextColor3 = Color3.fromRGB(255, 69, 58); SmartType(bestWord, detected, false) end
+                if bestWord then 
+                    StatusText.Text = "PANIC SAVE!"; StatusText.TextColor3 = Color3.fromRGB(255, 69, 58)
+                    local focused = UserInputService:GetFocusedTextBox()
+                    if focused and focused:IsDescendantOf(game) and focused.TextEditable then focused.Text = "" else Backspace(20) end
+                    task.wait(0.05)
+                    SmartType(bestWord, "", false, true) 
+                end
             end
         end
 
@@ -1386,7 +1469,11 @@ runConn = RunService.RenderStepped:Connect(function()
         end
 
         local typeVisible = frame and frame:FindFirstChild("Type") and frame.Type.Visible
-        if typeVisible and not lastTypeVisible then UsedWords = {}; StatusText.Text = "New Round - Words Reset"; StatusText.TextColor3 = THEME.Success end
+        if typeVisible and not lastTypeVisible then 
+            UsedWords = {}
+            autoSkillUsed = false -- Reset status Auto Skill per ronde
+            StatusText.Text = "New Round - Words Reset"; StatusText.TextColor3 = THEME.Success 
+        end
         lastTypeVisible = typeVisible
         
         if censored then
@@ -1430,4 +1517,20 @@ runConn = RunService.RenderStepped:Connect(function()
     end)
 end)
 
-inputConn = UserInputService.InputBegan:Connect(function(input) if unloaded then return end if input.KeyCode == TOGGLE_KEY then ScreenGui.Enabled = not ScreenGui.Enabled end end)
+inputConn = UserInputService.InputBegan:Connect(function(input, gpe) 
+    if unloaded then return end 
+    if input.KeyCode == TOGGLE_KEY then 
+        ScreenGui.Enabled = not ScreenGui.Enabled 
+    end
+    if input.KeyCode == Enum.KeyCode.RightShift and not gpe then
+        if isMinimized then return end
+        isCompact = not isCompact
+        if isCompact then 
+            Tween(MainFrame, {Size = UDim2.new(0, 320, 0, 470)})
+            RightPanel.Visible = false
+        else 
+            Tween(MainFrame, {Size = UDim2.new(0, 640, 0, 470)})
+            RightPanel.Visible = true 
+        end
+    end
+end)
