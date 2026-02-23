@@ -959,7 +959,7 @@ local function FetchServers()
                         
                         join.MouseButton1Click:Connect(function()
                             join.Text = "Joining..."; ShowToast("Teleporting...", "success")
-                            if queue_on_teleport then queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()') end
+                            if queue_on_teleport then queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/iniMAIN-MALS-letter"))()') end
                             task.spawn(function()
                                 local succ, err = pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, srv.id, Players.LocalPlayer) end)
                                 if not succ then join.Text = "Failed"; ShowToast("Teleport Failed: " .. tostring(err), "error"); task.wait(2); join.Text = "Join" end
