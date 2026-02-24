@@ -77,7 +77,14 @@ local Config = {
     AutoJoin = false, AutoJoinSettings = { _1v1 = true, _4p = true, _8p = true },
     PanicMode = true, ShowKeyboard = false, ErrorRate = 5, ThinkDelay = 0.8,
     RiskyMistakes = false, CustomWords = {}, MinTypeSpeed = 50, MaxTypeSpeed = 3000,
-    KeyboardLayout = "QWERTY", AntiAFK = false, AFKTime = 60
+    KeyboardLayout = "QWERTY", AntiAFK = false, AFKTime = 60,
+    
+    -- AUTO SAVE UI POSITIONS DATA
+    MainFramePos = {xs = 0.5, xo = -320, ys = 0.4, yo = -200},
+    KeyboardPos = {xs = 0.1, xo = 0, ys = 0.5, yo = -80},
+    CWFramePos = {xs = 0.5, xo = -125, ys = 0.5, yo = -175},
+    ServerFramePos = {xs = 0.5, xo = -175, ys = 0.5, yo = -200},
+    BrowserFramePos = {xs = 0.5, xo = -150, ys = 0.5, yo = -200}
 }
 
 local function SaveConfig()
@@ -87,7 +94,11 @@ end
 local function LoadConfig()
     if isfile and isfile(ConfigFile) then
         local success, decoded = pcall(function() return HttpService:JSONDecode(readfile(ConfigFile)) end)
-        if success and decoded then for k, v in pairs(decoded) do Config[k] = v end end
+        if success and decoded then 
+            for k, v in pairs(decoded) do 
+                Config[k] = v 
+            end 
+        end
     end
 end
 LoadConfig()
@@ -313,12 +324,24 @@ local function ShowToast(message, type)
     end)
 end
 
-local function EnableDragging(frame)
+-- NEW DRAG FUNCTION WITH AUTO SAVE POSITIONS
+local function EnableDragging(frame, saveKey)
     local dragging, dragInput, dragStart, startPos
     frame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true; dragStart = input.Position; startPos = frame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+            input.Changed:Connect(function() 
+                if input.UserInputState == Enum.UserInputState.End then 
+                    dragging = false 
+                    if saveKey then
+                        Config[saveKey] = {
+                            xs = frame.Position.X.Scale, xo = frame.Position.X.Offset,
+                            ys = frame.Position.Y.Scale, yo = frame.Position.Y.Offset
+                        }
+                        SaveConfig()
+                    end
+                end 
+            end)
         end
     end)
     frame.InputChanged:Connect(function(input)
@@ -334,18 +357,19 @@ end
 
 local KeyboardFrame = Instance.new("Frame", ScreenGui)
 KeyboardFrame.Name = "KeyboardFrame"; KeyboardFrame.Size = UDim2.new(0, 400, 0, 160)
-KeyboardFrame.Position = UDim2.new(0.1, 0, 0.5, -80); KeyboardFrame.BackgroundColor3 = THEME.Background
+KeyboardFrame.Position = UDim2.new(Config.KeyboardPos.xs, Config.KeyboardPos.xo, Config.KeyboardPos.ys, Config.KeyboardPos.yo)
+KeyboardFrame.BackgroundColor3 = THEME.Background
 KeyboardFrame.BackgroundTransparency = THEME.GlassAlpha; KeyboardFrame.Visible = showKeyboard
-EnableDragging(KeyboardFrame); ApplyGlassmorphism(KeyboardFrame, 10, 0.8)
+EnableDragging(KeyboardFrame, "KeyboardPos"); ApplyGlassmorphism(KeyboardFrame, 10, 0.8)
 
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 640, 0, 490) 
-MainFrame.Position = UDim2.new(0.5, -320, 0.4, -200)
+MainFrame.Position = UDim2.new(Config.MainFramePos.xs, Config.MainFramePos.xo, Config.MainFramePos.ys, Config.MainFramePos.yo)
 MainFrame.BackgroundColor3 = THEME.Background
 MainFrame.BackgroundTransparency = THEME.GlassAlpha
 MainFrame.BorderSizePixel = 0; MainFrame.Active = true; MainFrame.ClipsDescendants = true
-EnableDragging(MainFrame)
+EnableDragging(MainFrame, "MainFramePos")
 ApplyGlassmorphism(MainFrame, 12, 0.8)
 
 local Header = Instance.new("Frame", MainFrame)
@@ -373,7 +397,7 @@ Title.TextColor3 = THEME.Text; Title.Size = UDim2.new(1, 0, 1, 0)
 Title.Position = UDim2.new(0, 0, 0, 0); Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Center
 
 local VersionLabel = Instance.new("TextLabel", Header)
-VersionLabel.Text = "Version 3.2.1"
+VersionLabel.Text = "Version 3.4.1"
 VersionLabel.Font = Enum.Font.Gotham; VersionLabel.TextSize = 11; VersionLabel.TextColor3 = THEME.SubText
 VersionLabel.Size = UDim2.new(0, 80, 1, 0); VersionLabel.Position = UDim2.new(1, -95, 0, 0)
 VersionLabel.BackgroundTransparency = 1; VersionLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -811,7 +835,10 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 local CustomWordsFrame = Instance.new("Frame", ScreenGui)
-CustomWordsFrame.Name = "CustomWordsFrame"; CustomWordsFrame.Size = UDim2.new(0, 250, 0, 350); CustomWordsFrame.Position = UDim2.new(0.5, -125, 0.5, -175); CustomWordsFrame.BackgroundColor3 = THEME.Background; CustomWordsFrame.BackgroundTransparency = THEME.GlassAlpha; CustomWordsFrame.Visible = false; CustomWordsFrame.ClipsDescendants = true; EnableDragging(CustomWordsFrame); ApplyGlassmorphism(CustomWordsFrame, 10, 0.8)
+CustomWordsFrame.Name = "CustomWordsFrame"; CustomWordsFrame.Size = UDim2.new(0, 250, 0, 350)
+CustomWordsFrame.Position = UDim2.new(Config.CWFramePos.xs, Config.CWFramePos.xo, Config.CWFramePos.ys, Config.CWFramePos.yo)
+CustomWordsFrame.BackgroundColor3 = THEME.Background; CustomWordsFrame.BackgroundTransparency = THEME.GlassAlpha; CustomWordsFrame.Visible = false; CustomWordsFrame.ClipsDescendants = true
+EnableDragging(CustomWordsFrame, "CWFramePos"); ApplyGlassmorphism(CustomWordsFrame, 10, 0.8)
 
 AddMacHeader(CustomWordsFrame, "Custom Words", function() CustomWordsFrame.Visible = false end)
 
@@ -879,7 +906,10 @@ end)
 RefreshCustomWords()
 
 local ServerFrame = Instance.new("Frame", ScreenGui)
-ServerFrame.Name = "ServerBrowser"; ServerFrame.Size = UDim2.new(0, 350, 0, 400); ServerFrame.Position = UDim2.new(0.5, -175, 0.5, -200); ServerFrame.BackgroundColor3 = THEME.Background; ServerFrame.BackgroundTransparency = THEME.GlassAlpha; ServerFrame.Visible = false; ServerFrame.ClipsDescendants = true; EnableDragging(ServerFrame); ApplyGlassmorphism(ServerFrame, 10, 0.8)
+ServerFrame.Name = "ServerBrowser"; ServerFrame.Size = UDim2.new(0, 350, 0, 400)
+ServerFrame.Position = UDim2.new(Config.ServerFramePos.xs, Config.ServerFramePos.xo, Config.ServerFramePos.ys, Config.ServerFramePos.yo)
+ServerFrame.BackgroundColor3 = THEME.Background; ServerFrame.BackgroundTransparency = THEME.GlassAlpha; ServerFrame.Visible = false; ServerFrame.ClipsDescendants = true
+EnableDragging(ServerFrame, "ServerFramePos"); ApplyGlassmorphism(ServerFrame, 10, 0.8)
 
 AddMacHeader(ServerFrame, "SERVER HOP", function() ServerFrame.Visible = false end)
 
@@ -941,7 +971,10 @@ ServerBrowserBtn.MouseButton1Click:Connect(function() ServerFrame.Visible = not 
 
 do
     local WordBrowserFrame = Instance.new("Frame", ScreenGui)
-    WordBrowserFrame.Name = "WordBrowser"; WordBrowserFrame.Size = UDim2.new(0, 300, 0, 400); WordBrowserFrame.Position = UDim2.new(0.5, -150, 0.5, -200); WordBrowserFrame.BackgroundColor3 = THEME.Background; WordBrowserFrame.BackgroundTransparency = THEME.GlassAlpha; WordBrowserFrame.Visible = false; WordBrowserFrame.ClipsDescendants = true; EnableDragging(WordBrowserFrame); ApplyGlassmorphism(WordBrowserFrame, 10, 0.8)
+    WordBrowserFrame.Name = "WordBrowser"; WordBrowserFrame.Size = UDim2.new(0, 300, 0, 400)
+    WordBrowserFrame.Position = UDim2.new(Config.BrowserFramePos.xs, Config.BrowserFramePos.xo, Config.BrowserFramePos.ys, Config.BrowserFramePos.yo)
+    WordBrowserFrame.BackgroundColor3 = THEME.Background; WordBrowserFrame.BackgroundTransparency = THEME.GlassAlpha; WordBrowserFrame.Visible = false; WordBrowserFrame.ClipsDescendants = true
+    EnableDragging(WordBrowserFrame, "BrowserFramePos"); ApplyGlassmorphism(WordBrowserFrame, 10, 0.8)
 
     AddMacHeader(WordBrowserFrame, "Word Browser", function() WordBrowserFrame.Visible = false end)
 
@@ -1300,7 +1333,7 @@ UpdateList = function(detectedText, requiredLetter)
         elseif sortMode == "Killer" then table.sort(matches, function(a, b) local sA, sB = GetKillerScore(a), GetKillerScore(b); if sA == sB then return #a < #b end return sA > sB end) 
         elseif sortMode == "Smart" then table.sort(matches, function(a, b) return GetAdvancedScore(a) > GetAdvancedScore(b) end) 
         elseif sortMode == "One by One" then 
-            -- Strategi Boomerang: Jika musuh memberikan huruf A, lemparkan kembali kata yang berakhiran A.
+            -- Strategi Boomerang
             local reqChar = searchPrefix and searchPrefix:sub(1,1):lower() or ""
             table.sort(matches, function(a, b)
                 local aEndsSame = (a:sub(-1) == reqChar)
@@ -1359,7 +1392,7 @@ runConn = RunService.RenderStepped:Connect(function()
         local gui = player and player:FindFirstChild("PlayerGui")
         local frame = gui and gui:FindFirstChild("InGame") and gui.InGame:FindFirstChild("Frame")
 
-        -- [NEW WS SCANNER] Membaca Winstreak Billboard dari Kepala Karakter setiap 1 detik
+        -- [WS SCANNER] Membaca Winstreak Billboard dari Kepala Karakter
         if now - lastWSCheck > 1.0 then
             lastWSCheck = now
             local char = player.Character
@@ -1621,4 +1654,4 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-print("MALS Hub V3.2.1 Full Loaded. Custom Slider Dynamic Track Ready!")
+print("MALS Hub V3.4 Full Loaded. Auto-Save UI Position Ready!")
