@@ -54,6 +54,22 @@ local function ApplyGlassmorphism(obj, radius, strokeAlpha)
     end
 end
 
+-- DYNAMIC SLIDER COLOR (LEVELING)
+local function GetSliderColor(pct)
+    local c1 = Color3.fromRGB(10, 132, 255)  -- Biru (Rendah)
+    local c2 = Color3.fromRGB(50, 215, 75)   -- Hijau (Aman)
+    local c3 = Color3.fromRGB(255, 189, 46)  -- Kuning (Menengah)
+    local c4 = Color3.fromRGB(255, 69, 58)   -- Merah (Bahaya/Tinggi)
+
+    if pct <= 0.33 then
+        return c1:Lerp(c2, pct / 0.33)
+    elseif pct <= 0.66 then
+        return c2:Lerp(c3, (pct - 0.33) / 0.33)
+    else
+        return c3:Lerp(c4, (pct - 0.66) / 0.34)
+    end
+end
+
 local ConfigFile = "WordHelper_Config.json"
 local Config = {
     CPM = 550, Blatant = false, Humanize = true, FingerModel = true,
@@ -84,8 +100,8 @@ local antiAFK, afkTimeLimit = Config.AntiAFK, Config.AFKTime
 local isTyping, isAutoPlayScheduled, lastTypingStart, runConn, inputConn, logConn, unloaded = false, false, 0, nil, nil, nil, false
 local isMyTurnLogDetected, logRequiredLetters, turnExpiryTime, autoSkillUsed = false, "", 0, false
 local Blacklist, UsedWords, RandomOrderCache, RandomPriority = {}, {}, {}, {}
-local lastDetected, lastLogicUpdate, lastAutoJoinCheck, lastWordCheck = "---", 0, 0, 0
-local cachedDetected, cachedCensored = "", false
+local lastDetected, lastLogicUpdate, lastAutoJoinCheck, lastWordCheck, lastWSCheck = "---", 0, 0, 0, 0
+local cachedDetected, cachedCensored, cachedWS = "", false, "0"
 local LOGIC_RATE, AUTO_JOIN_RATE, UpdateList = 0.1, 0.5, nil
 local ButtonCache, ButtonData, JoinDebounce = {}, {}, {}
 local thinkDelayMin, thinkDelayMax = 0.4, 1.2
@@ -357,7 +373,7 @@ Title.TextColor3 = THEME.Text; Title.Size = UDim2.new(1, 0, 1, 0)
 Title.Position = UDim2.new(0, 0, 0, 0); Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Center
 
 local VersionLabel = Instance.new("TextLabel", Header)
-VersionLabel.Text = "Version 3.1.5"
+VersionLabel.Text = "Version 3.2.1"
 VersionLabel.Font = Enum.Font.Gotham; VersionLabel.TextSize = 11; VersionLabel.TextColor3 = THEME.SubText
 VersionLabel.Size = UDim2.new(0, 80, 1, 0); VersionLabel.Position = UDim2.new(1, -95, 0, 0)
 VersionLabel.BackgroundTransparency = 1; VersionLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -395,8 +411,18 @@ Instance.new("UICorner", StatusDot).CornerRadius = UDim.new(1, 0)
 
 local StatusText = Instance.new("TextLabel", StatusFrame)
 StatusText.Text = "Idle..."; StatusText.RichText = true; StatusText.Font = Enum.Font.Gotham; StatusText.TextSize = 12
-StatusText.TextColor3 = THEME.SubText; StatusText.Size = UDim2.new(1, -15, 1, 0); StatusText.Position = UDim2.new(0, 15, 0, 0)
+StatusText.TextColor3 = THEME.SubText; StatusText.Size = UDim2.new(1, -100, 1, 0); StatusText.Position = UDim2.new(0, 15, 0, 0)
 StatusText.BackgroundTransparency = 1; StatusText.TextXAlignment = Enum.TextXAlignment.Left
+
+-- WINSTREAK DI STATUS FRAME (Sejajar dengan Waiting)
+local StatsData = {}
+local WSLbl = Instance.new("TextLabel", StatusFrame)
+WSLbl.Size = UDim2.new(0, 90, 1, 0)
+WSLbl.Position = UDim2.new(1, -90, 0, 0) 
+WSLbl.Text = "🔥 WS: 0"
+WSLbl.Font = Enum.Font.GothamBold; WSLbl.TextSize = 12; WSLbl.TextColor3 = THEME.Warning; WSLbl.BackgroundTransparency = 1
+WSLbl.TextXAlignment = Enum.TextXAlignment.Right
+StatsData.WS = WSLbl
 
 local SearchFrame = Instance.new("Frame", LeftPanel)
 SearchFrame.Size = UDim2.new(1, -120, 0, 30); SearchFrame.Position = UDim2.new(0, 20, 0, 35)
@@ -411,8 +437,7 @@ SearchBox.TextXAlignment = Enum.TextXAlignment.Left
 
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function() if UpdateList then UpdateList(lastDetected, lastRequiredLetter) end end)
 
--- TIMER AND WORDS IN LEFT PANEL
-local StatsData = {}
+-- TIMER AND WORDS DIKEMBALIKAN UKURANNYA
 local StatsFrame = Instance.new("Frame", LeftPanel)
 StatsFrame.Size = UDim2.new(0, 90, 0, 30)
 StatsFrame.Position = UDim2.new(1, -110, 0, 35)
@@ -441,9 +466,10 @@ UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder; UIListLayout.Padding = UDim
 local SettingsFrame = Instance.new("Frame", RightPanel)
 SettingsFrame.Size = UDim2.new(1, -20, 1, -40); SettingsFrame.Position = UDim2.new(0, 10, 0, 5); SettingsFrame.BackgroundTransparency = 1
 
-local function BuildSlider(parent, text, yPos, min, max, current, callback)
+local function BuildSlider(parent, formatText, yPos, min, max, current, callback)
     local lbl = Instance.new("TextLabel", parent)
-    lbl.Text = text; lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextColor3 = THEME.SubText
+    lbl.Text = string.format(formatText, current)
+    lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextColor3 = THEME.SubText
     lbl.Size = UDim2.new(1, -30, 0, 15); lbl.Position = UDim2.new(0, 15, 0, yPos); lbl.BackgroundTransparency = 1; lbl.TextXAlignment = Enum.TextXAlignment.Left
 
     local bg = Instance.new("Frame", parent)
@@ -451,32 +477,46 @@ local function BuildSlider(parent, text, yPos, min, max, current, callback)
 
     local pct = math.clamp((current - min) / (max - min), 0, 1)
     local fill = Instance.new("Frame", bg)
-    fill.Size = UDim2.new(pct, 0, 1, 0); fill.BackgroundColor3 = THEME.Accent; ApplyGlassmorphism(fill, 2, 1)
+    fill.Size = UDim2.new(pct, 0, 1, 0)
+    fill.BackgroundColor3 = GetSliderColor(pct) -- Warna Awal Dinamis
+    ApplyGlassmorphism(fill, 2, 1)
     
     local knob = Instance.new("Frame", fill)
     knob.Size = UDim2.new(0, 10, 0, 10); knob.Position = UDim2.new(1, -5, 0.5, -5); knob.BackgroundColor3 = THEME.Text; ApplyGlassmorphism(knob, 5, 0.5)
 
     local btn = Instance.new("TextButton", bg)
-    -- Perbesar Hitbox sentuhan jari menjadi 24 pixel agar gampang ditarik di HP
     btn.Size = UDim2.new(1, 0, 0, 24); btn.Position = UDim2.new(0, 0, 0.5, -12); btn.BackgroundTransparency = 1; btn.Text = ""
     
     local dragging = false
+    local function UpdateValue(inputPos)
+        local relX = math.clamp(inputPos - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
+        local actPct = (bg.AbsoluteSize.X > 0) and (relX / bg.AbsoluteSize.X) or 0
+        local val = math.floor(min + (actPct * (max - min)))
+        
+        fill.Size = UDim2.new(actPct, 0, 1, 0)
+        fill.BackgroundColor3 = GetSliderColor(actPct) -- Update Warna Dinamis
+        
+        if formatText:find("%.2f") then
+            lbl.Text = string.format(formatText, val / 100)
+        else
+            lbl.Text = string.format(formatText, val)
+        end
+        callback(val)
+    end
+
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            local moveConn
-            moveConn = RunService.RenderStepped:Connect(function()
-                if not dragging then moveConn:Disconnect() return end
-                local mousePos = UserInputService:GetMouseLocation()
-                local relX = math.clamp(mousePos.X - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
-                local actPct = (bg.AbsoluteSize.X > 0) and (relX / bg.AbsoluteSize.X) or 0
-                local val = math.floor(min + (actPct * (max - min)))
-                fill.Size = UDim2.new(actPct, 0, 1, 0)
-                callback(val, actPct)
-            end)
+            UpdateValue(input.Position.X)
         end
     end)
     
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            UpdateValue(input.Position.X)
+        end
+    end)
+
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             if dragging then
@@ -489,22 +529,18 @@ local function BuildSlider(parent, text, yPos, min, max, current, callback)
     return lbl
 end
 
--- Deklarasikan variabelnya TERLEBIH DAHULU agar dikenali di dalam callback function
 local s1, s2, s3 
 
-s1 = BuildSlider(SettingsFrame, "Speed: " .. currentCPM .. " CPM", 0, 50, 3000, currentCPM, function(v) 
-    currentCPM = v; Config.CPM = v
-    if s1 then s1.Text = "Speed: "..v.." CPM" end
+s1 = BuildSlider(SettingsFrame, "Speed: %d CPM", 0, 50, 3000, currentCPM, function(v) 
+    currentCPM = v; Config.CPM = v 
 end)
 
-s2 = BuildSlider(SettingsFrame, "Error Rate: " .. errorRate .. "%", 32, 0, 30, errorRate, function(v) 
-    errorRate = v; Config.ErrorRate = v
-    if s2 then s2.Text = "Error Rate: "..v.."%" end
+s2 = BuildSlider(SettingsFrame, "Error Rate: %d%%", 32, 0, 30, errorRate, function(v) 
+    errorRate = v; Config.ErrorRate = v 
 end)
 
-s3 = BuildSlider(SettingsFrame, string.format("Think: %.2fs", thinkDelayCurrent), 64, 40, 120, thinkDelayCurrent*100, function(v) 
-    thinkDelayCurrent = v/100; Config.ThinkDelay = v/100
-    if s3 then s3.Text = string.format("Think: %.2fs", v/100) end
+s3 = BuildSlider(SettingsFrame, "Think: %.2fs", 64, 40, 120, thinkDelayCurrent*100, function(v) 
+    thinkDelayCurrent = v/100; Config.ThinkDelay = v/100 
 end)
 
 local function FormatWaktu(detik)
@@ -525,30 +561,38 @@ afkBg.Size = UDim2.new(0, 180, 0, 4); afkBg.Position = UDim2.new(0, 105, 0, 114)
 
 local afkPct = math.clamp((afkTimeLimit-60)/(900-60), 0, 1)
 local afkFill = Instance.new("Frame", afkBg)
-afkFill.Size = UDim2.new(afkPct, 0, 1, 0); afkFill.BackgroundColor3 = THEME.Warning; ApplyGlassmorphism(afkFill, 2, 1)
+afkFill.Size = UDim2.new(afkPct, 0, 1, 0)
+afkFill.BackgroundColor3 = GetSliderColor(afkPct) -- Warna Awal Dinamis
+ApplyGlassmorphism(afkFill, 2, 1)
 
 local afkKnob = Instance.new("Frame", afkFill)
 afkKnob.Size = UDim2.new(0, 10, 0, 10); afkKnob.Position = UDim2.new(1, -5, 0.5, -5); afkKnob.BackgroundColor3 = THEME.Text; ApplyGlassmorphism(afkKnob, 5, 0.5)
 
 local afkBtn = Instance.new("TextButton", afkBg)
--- Hitbox AFK Slider diperbesar
 afkBtn.Size = UDim2.new(1, 0, 0, 24); afkBtn.Position = UDim2.new(0, 0, 0.5, -12); afkBtn.BackgroundTransparency = 1; afkBtn.Text = ""
 
 local draggingAFK = false
+local function UpdateAFK(inputPos)
+    local relX = math.clamp(inputPos - afkBg.AbsolutePosition.X, 0, afkBg.AbsoluteSize.X)
+    local actPct = (afkBg.AbsoluteSize.X > 0) and (relX / afkBg.AbsoluteSize.X) or 0
+    afkTimeLimit = math.floor(60 + (actPct * 840))
+    Config.AFKTime = afkTimeLimit
+    
+    afkFill.Size = UDim2.new(actPct, 0, 1, 0)
+    afkFill.BackgroundColor3 = GetSliderColor(actPct) -- Update Warna Dinamis
+    AFKLabel.Text = "AFK Hop: " .. FormatWaktu(afkTimeLimit)
+end
+
 afkBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         draggingAFK = true
-        local moveConn
-        moveConn = RunService.RenderStepped:Connect(function()
-            if not draggingAFK then moveConn:Disconnect() return end
-            local mousePos = UserInputService:GetMouseLocation()
-            local relX = math.clamp(mousePos.X - afkBg.AbsolutePosition.X, 0, afkBg.AbsoluteSize.X)
-            local actPct = (afkBg.AbsoluteSize.X > 0) and (relX / afkBg.AbsoluteSize.X) or 0
-            afkTimeLimit = math.floor(60 + (actPct * 840))
-            Config.AFKTime = afkTimeLimit
-            afkFill.Size = UDim2.new(actPct, 0, 1, 0)
-            AFKLabel.Text = "AFK Hop: " .. FormatWaktu(afkTimeLimit)
-        end)
+        UpdateAFK(input.Position.X)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if draggingAFK and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        UpdateAFK(input.Position.X)
     end
 end)
 
@@ -560,7 +604,6 @@ UserInputService.InputEnded:Connect(function(input)
         end
     end
 end)
-
 
 local TogglesFrame = Instance.new("Frame", SettingsFrame)
 TogglesFrame.Size = UDim2.new(1, 0, 1, -135); TogglesFrame.Position = UDim2.new(0, 0, 0, 135); TogglesFrame.BackgroundTransparency = 1
@@ -688,15 +731,15 @@ local isCompact, isMinimized = false, false
 GreenBtn.MouseButton1Click:Connect(function()
     if isMinimized then return end
     isCompact = not isCompact
-    if isCompact then Tween(MainFrame, {Size = UDim2.new(0, 320, 0, 470)}); RightPanel.Visible = false
-    else Tween(MainFrame, {Size = UDim2.new(0, 640, 0, 470)}); RightPanel.Visible = true end
+    if isCompact then Tween(MainFrame, {Size = UDim2.new(0, 320, 0, 490)}); RightPanel.Visible = false
+    else Tween(MainFrame, {Size = UDim2.new(0, 640, 0, 490)}); RightPanel.Visible = true end
 end)
 
 YellowBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     local targetWidth = isCompact and 320 or 640
     if isMinimized then Tween(MainFrame, {Size = UDim2.new(0, targetWidth, 0, 45)}); LeftPanel.Visible = false; RightPanel.Visible = false
-    else Tween(MainFrame, {Size = UDim2.new(0, targetWidth, 0, 470)}); task.wait(0.2); LeftPanel.Visible = true; if not isCompact then RightPanel.Visible = true end end
+    else Tween(MainFrame, {Size = UDim2.new(0, targetWidth, 0, 490)}); task.wait(0.2); LeftPanel.Visible = true; if not isCompact then RightPanel.Visible = true end end
 end)
 
 RedBtn.MouseButton1Click:Connect(function()
@@ -874,7 +917,10 @@ local function FetchServers()
                         
                         join.MouseButton1Click:Connect(function()
                             join.Text = "Joining..."; ShowToast("Teleporting...", "success")
-                            if queue_on_teleport then queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()') end
+                            local QOT = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or (getgenv and getgenv().queue_on_teleport)
+                            if QOT then
+                                QOT('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()')
+                            end
                             task.spawn(function()
                                 local succ, err = pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, srv.id, Players.LocalPlayer) end)
                                 if not succ then join.Text = "Failed"; ShowToast("Teleport Failed: " .. tostring(err), "error"); task.wait(2); join.Text = "Join" end
@@ -906,7 +952,7 @@ do
     WBEndBox.Font = Enum.Font.Gotham; WBEndBox.TextSize = 12; WBEndBox.BackgroundColor3 = THEME.ItemBG; WBEndBox.Size = UDim2.new(0.4, 0, 0, 24); WBEndBox.Position = UDim2.new(0.45, 0, 0, 45); ApplyGlassmorphism(WBEndBox, 4, 0.9); SetupPhantomBox(WBEndBox, "Ends with...")
 
     local WBLengthBox = Instance.new("TextBox", WordBrowserFrame)
-    WBLengthBox.Font = Enum.Font.Gotham; WBLengthBox.TextSize = 12; WBLengthBox.BackgroundColor3 = THEME.ItemBG; WBLengthBox.Size = UDim2.new(0.2, 0, 0, 24); WBLengthBox.Position = UDim2.new(0.02, 0, 0, 80); ApplyGlassmorphism(WBLengthBox, 4, 0.9); SetupPhantomBox(WBLengthBox, "Len...")
+    WBLengthBox.Font = Enum.Font.Gotham; WBLengthBox.TextSize = 12; WBLengthBox.BackgroundColor3 = THEME.ItemBG; local WBLengthBoxSize = UDim2.new(0.2, 0, 0, 24); WBLengthBox.Size = WBLengthBoxSize; WBLengthBox.Position = UDim2.new(0.02, 0, 0, 80); ApplyGlassmorphism(WBLengthBox, 4, 0.9); SetupPhantomBox(WBLengthBox, "Len...")
 
     local WBSearchBtn = Instance.new("TextButton", WordBrowserFrame)
     WBSearchBtn.Text = "Go"; WBSearchBtn.Font = Enum.Font.GothamMedium; WBSearchBtn.TextSize = 12; WBSearchBtn.BackgroundColor3 = THEME.Accent; WBSearchBtn.Size = UDim2.new(0.1, 0, 0, 24); WBSearchBtn.Position = UDim2.new(0.88, 0, 0, 45); ApplyGlassmorphism(WBSearchBtn, 4, 0.9)
@@ -1260,16 +1306,14 @@ UpdateList = function(detectedText, requiredLetter)
                 local aEndsSame = (a:sub(-1) == reqChar)
                 local bEndsSame = (b:sub(-1) == reqChar)
         
-                -- Prioritaskan kata yang akhirnya sama dengan awalan (Boomerang)
                 if aEndsSame and not bEndsSame then return true end
                 if bEndsSame and not aEndsSame then return false end
         
-                -- Jika keduanya sama (atau tidak sama), prioritas kedua adalah kata terpendek agar ketikan secepat kilat
                 return #a < #b 
             end)
         end
-    end -- <-- INI END YANG SEBELUMNYA HILANG DAN BIKIN ERROR
-
+    end 
+    
     local displayList = {}; for i = 1, math.min(40, #matches) do table.insert(displayList, matches[i]) end
     
     if showKeyboard and KeyboardFrame.Visible then
@@ -1315,6 +1359,28 @@ runConn = RunService.RenderStepped:Connect(function()
         local gui = player and player:FindFirstChild("PlayerGui")
         local frame = gui and gui:FindFirstChild("InGame") and gui.InGame:FindFirstChild("Frame")
 
+        -- [NEW WS SCANNER] Membaca Winstreak Billboard dari Kepala Karakter setiap 1 detik
+        if now - lastWSCheck > 1.0 then
+            lastWSCheck = now
+            local char = player.Character
+            if char then
+                local foundWS = false
+                for _, desc in ipairs(char:GetDescendants()) do
+                    if desc:IsA("BillboardGui") then
+                        for _, txt in ipairs(desc:GetDescendants()) do
+                            if txt:IsA("TextLabel") and tonumber(txt.Text) then
+                                cachedWS = txt.Text
+                                foundWS = true
+                                break
+                            end
+                        end
+                    end
+                    if foundWS then break end
+                end
+            end
+            if StatsData.WS then StatsData.WS.Text = "🔥 WS: " .. cachedWS end
+        end
+
         if isTyping and (now - lastTypingStart) > 15 then isTyping = false; isAutoPlayScheduled = false; StatusText.Text = "Typing State Reset (Watchdog)"; StatusText.TextColor3 = THEME.Warning end
         
         local isVisible = false
@@ -1351,15 +1417,13 @@ runConn = RunService.RenderStepped:Connect(function()
                 if box then box:ReleaseFocus() end 
                 task.wait(0.05)
         
-                -- Coba fungsi keypress tingkat rendah (Executor modern)
                 if keypress then
                     pcall(function()
-                        keypress(0x20) -- 0x20 adalah kode hex untuk Spacebar
+                        keypress(0x20)
                         task.wait(0.05)
                         keyrelease(0x20)
                     end)
                 else
-                    -- VIM Fallback: target diubah ke nil agar berlaku secara global
                     pcall(function()
                         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, nil)
                         task.wait(0.05)
@@ -1490,8 +1554,9 @@ local function ServerHop()
             end
             if #Servers > 0 then
                 table.sort(Servers, function(a, b) return a.ping < b.ping end)
-                if queue_on_teleport then
-                    queue_on_teleport('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()')
+                local QOT = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or (getgenv and getgenv().queue_on_teleport)
+                if QOT then
+                    QOT('loadstring(game:HttpGet("https://raw.githubusercontent.com/aspago-lua/rbx-script/refs/heads/main/MALS-letter"))()')
                 end
                 game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, Servers[1].id)
                 return
@@ -1547,13 +1612,13 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         if isMinimized then return end
         isCompact = not isCompact
         if isCompact then 
-            Tween(MainFrame, {Size = UDim2.new(0, 320, 0, 470)})
+            Tween(MainFrame, {Size = UDim2.new(0, 320, 0, 490)})
             RightPanel.Visible = false
         else 
-            Tween(MainFrame, {Size = UDim2.new(0, 640, 0, 470)})
+            Tween(MainFrame, {Size = UDim2.new(0, 640, 0, 490)})
             RightPanel.Visible = true 
         end
     end
 end)
 
-print("MALS Hub V3.1 Full Loaded. Anti-AFK Server Hop Ready!")
+print("MALS Hub V3.2.1 Full Loaded. Custom Slider Dynamic Track Ready!")
