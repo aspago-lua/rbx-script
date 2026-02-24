@@ -680,7 +680,7 @@ local ServerBrowserBtn = Instance.new("TextButton", TogglesFrame)
 ServerBrowserBtn.Text = "SERVER HOP"; ServerBrowserBtn.Font = Enum.Font.GothamMedium; ServerBrowserBtn.TextSize = 11; ServerBrowserBtn.TextColor3 = THEME.Text; ServerBrowserBtn.BackgroundColor3 = THEME.ItemBG; ServerBrowserBtn.BackgroundTransparency = THEME.ItemAlpha; ServerBrowserBtn.Size = UDim2.new(0, 265, 0, 26); ServerBrowserBtn.Position = UDim2.new(0, 15, 0, 217); ApplyGlassmorphism(ServerBrowserBtn, 6, 0.9)
 
 local ShortcutNote = Instance.new("TextLabel", TogglesFrame)
-ShortcutNote.Text = "— Shortcuts —\nRight CTRL: Minimize UI   •   Right Shift: Compact Mode\nDel: Auto Clear Text"
+ShortcutNote.Text = "CTRL: Minimize UI   •   R Shift: Compact Mode   •   Del: Auto Clear Text"
 ShortcutNote.Font = Enum.Font.Gotham; ShortcutNote.TextSize = 10; ShortcutNote.TextColor3 = THEME.SubText; ShortcutNote.Size = UDim2.new(1, -30, 0, 35); ShortcutNote.Position = UDim2.new(0, 15, 0, 248); ShortcutNote.BackgroundTransparency = 1; ShortcutNote.TextXAlignment = Enum.TextXAlignment.Center
 
 local isCompact, isMinimized = false, false
