@@ -324,7 +324,7 @@ EnableDragging(KeyboardFrame); ApplyGlassmorphism(KeyboardFrame, 10, 0.8)
 
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 640, 0, 470)
+MainFrame.Size = UDim2.new(0, 640, 0, 490) 
 MainFrame.Position = UDim2.new(0.5, -320, 0.4, -200)
 MainFrame.BackgroundColor3 = THEME.Background
 MainFrame.BackgroundTransparency = THEME.GlassAlpha
@@ -357,7 +357,7 @@ Title.TextColor3 = THEME.Text; Title.Size = UDim2.new(1, 0, 1, 0)
 Title.Position = UDim2.new(0, 0, 0, 0); Title.BackgroundTransparency = 1; Title.TextXAlignment = Enum.TextXAlignment.Center
 
 local VersionLabel = Instance.new("TextLabel", Header)
-VersionLabel.Text = "Version 3.1"
+VersionLabel.Text = "Version 3.1.5"
 VersionLabel.Font = Enum.Font.Gotham; VersionLabel.TextSize = 11; VersionLabel.TextColor3 = THEME.SubText
 VersionLabel.Size = UDim2.new(0, 80, 1, 0); VersionLabel.Position = UDim2.new(1, -95, 0, 0)
 VersionLabel.BackgroundTransparency = 1; VersionLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -376,13 +376,13 @@ Divider.BackgroundColor3 = THEME.Stroke; Divider.BackgroundTransparency = 0.9
 local CreditLeft = Instance.new("TextLabel", RightPanel)
 CreditLeft.Text = "Script by: Mas Arip"
 CreditLeft.Font = Enum.Font.Gotham; CreditLeft.TextSize = 10; CreditLeft.TextColor3 = THEME.SubText
-CreditLeft.Size = UDim2.new(0.5, -15, 0, 15); CreditLeft.Position = UDim2.new(0, 15, 1, -15)
+CreditLeft.Size = UDim2.new(0.5, -15, 0, 15); CreditLeft.Position = UDim2.new(0, 15, 1, -20)
 CreditLeft.BackgroundTransparency = 1; CreditLeft.TextXAlignment = Enum.TextXAlignment.Left
 
 local CreditRight = Instance.new("TextLabel", RightPanel)
 CreditRight.Text = "Thanks To: LendowSky"
 CreditRight.Font = Enum.Font.Gotham; CreditRight.TextSize = 10; CreditRight.TextColor3 = THEME.SubText
-CreditRight.Size = UDim2.new(0.5, -15, 0, 15); CreditRight.Position = UDim2.new(0.5, 0, 1, -15)
+CreditRight.Size = UDim2.new(0.5, -15, 0, 15); CreditRight.Position = UDim2.new(0.5, 0, 1, -20)
 CreditRight.BackgroundTransparency = 1; CreditRight.TextXAlignment = Enum.TextXAlignment.Right
 
 -- LEFT PANEL COMPONENTS
@@ -449,68 +449,118 @@ local function BuildSlider(parent, text, yPos, min, max, current, callback)
     local bg = Instance.new("Frame", parent)
     bg.Size = UDim2.new(1, -30, 0, 4); bg.Position = UDim2.new(0, 15, 0, yPos + 18); bg.BackgroundColor3 = THEME.Slider; ApplyGlassmorphism(bg, 2, 1)
 
+    local pct = math.clamp((current - min) / (max - min), 0, 1)
     local fill = Instance.new("Frame", bg)
-    fill.Size = UDim2.new((current-min)/(max-min), 0, 1, 0); fill.BackgroundColor3 = THEME.Accent; ApplyGlassmorphism(fill, 2, 1)
+    fill.Size = UDim2.new(pct, 0, 1, 0); fill.BackgroundColor3 = THEME.Accent; ApplyGlassmorphism(fill, 2, 1)
     
     local knob = Instance.new("Frame", fill)
     knob.Size = UDim2.new(0, 10, 0, 10); knob.Position = UDim2.new(1, -5, 0.5, -5); knob.BackgroundColor3 = THEME.Text; ApplyGlassmorphism(knob, 5, 0.5)
 
     local btn = Instance.new("TextButton", bg)
-    btn.Size = UDim2.new(1,0,1,0); btn.BackgroundTransparency = 1; btn.Text = ""
+    -- Perbesar Hitbox sentuhan jari menjadi 24 pixel agar gampang ditarik di HP
+    btn.Size = UDim2.new(1, 0, 0, 24); btn.Position = UDim2.new(0, 0, 0.5, -12); btn.BackgroundTransparency = 1; btn.Text = ""
     
-    btn.MouseButton1Down:Connect(function()
-        local move, rel
-        local function Update()
-            local mousePos = UserInputService:GetMouseLocation()
-            local relX = math.clamp(mousePos.X - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
-            local pct = relX / bg.AbsoluteSize.X
-            local val = math.floor(min + (pct * (max - min)))
-            fill.Size = UDim2.new(pct, 0, 1, 0)
-            callback(val, pct)
+    local dragging = false
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            local moveConn
+            moveConn = RunService.RenderStepped:Connect(function()
+                if not dragging then moveConn:Disconnect() return end
+                local mousePos = UserInputService:GetMouseLocation()
+                local relX = math.clamp(mousePos.X - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
+                local actPct = (bg.AbsoluteSize.X > 0) and (relX / bg.AbsoluteSize.X) or 0
+                local val = math.floor(min + (actPct * (max - min)))
+                fill.Size = UDim2.new(actPct, 0, 1, 0)
+                callback(val, actPct)
+            end)
         end
-        Update()
-        move = RunService.RenderStepped:Connect(Update)
-        rel = UserInputService.InputEnded:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 then move:Disconnect(); rel:Disconnect(); SaveConfig() end
-        end)
     end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                SaveConfig()
+            end
+        end
+    end)
+    
     return lbl
 end
 
-local s1 = BuildSlider(SettingsFrame, "Speed: " .. currentCPM .. " CPM", 0, 50, 3000, currentCPM, function(v) 
-    currentCPM = v; Config.CPM = v; s1.Text = "Speed: "..v.." CPM" 
-end)
-local s2 = BuildSlider(SettingsFrame, "Error Rate: " .. errorRate .. "%", 32, 0, 30, errorRate, function(v) 
-    errorRate = v; Config.ErrorRate = v; s2.Text = "Error Rate: "..v.."%" 
-end)
-local s3 = BuildSlider(SettingsFrame, string.format("Think: %.2fs", thinkDelayCurrent), 64, 40, 120, thinkDelayCurrent*100, function(v) 
-    thinkDelayCurrent = v/100; Config.ThinkDelay = v/100; s3.Text = string.format("Think: %.2fs", v/100) 
+-- Deklarasikan variabelnya TERLEBIH DAHULU agar dikenali di dalam callback function
+local s1, s2, s3 
+
+s1 = BuildSlider(SettingsFrame, "Speed: " .. currentCPM .. " CPM", 0, 50, 3000, currentCPM, function(v) 
+    currentCPM = v; Config.CPM = v
+    if s1 then s1.Text = "Speed: "..v.." CPM" end
 end)
 
+s2 = BuildSlider(SettingsFrame, "Error Rate: " .. errorRate .. "%", 32, 0, 30, errorRate, function(v) 
+    errorRate = v; Config.ErrorRate = v
+    if s2 then s2.Text = "Error Rate: "..v.."%" end
+end)
+
+s3 = BuildSlider(SettingsFrame, string.format("Think: %.2fs", thinkDelayCurrent), 64, 40, 120, thinkDelayCurrent*100, function(v) 
+    thinkDelayCurrent = v/100; Config.ThinkDelay = v/100
+    if s3 then s3.Text = string.format("Think: %.2fs", v/100) end
+end)
+
+local function FormatWaktu(detik)
+    local m = math.floor(detik / 60)
+    local s = detik % 60
+    if m > 0 and s > 0 then return string.format("%ds (%d menit %d dtk)", detik, m, s)
+    elseif m > 0 then return string.format("%ds (%d menit)", detik, m)
+    else return string.format("%ds (%d detik)", detik, s) end
+end
+
 local AFKLabel = Instance.new("TextLabel", SettingsFrame)
-AFKLabel.Text = "AFK Hop: "..afkTimeLimit.."s"; AFKLabel.Font = Enum.Font.GothamMedium; AFKLabel.TextSize = 11; AFKLabel.TextColor3 = THEME.SubText
+AFKLabel.Text = "AFK Hop: " .. FormatWaktu(afkTimeLimit)
+AFKLabel.Font = Enum.Font.GothamMedium; AFKLabel.TextSize = 11; AFKLabel.TextColor3 = THEME.SubText
 AFKLabel.Size = UDim2.new(1, -120, 0, 15); AFKLabel.Position = UDim2.new(0, 105, 0, 96); AFKLabel.BackgroundTransparency = 1; AFKLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local afkBg = Instance.new("Frame", SettingsFrame)
 afkBg.Size = UDim2.new(0, 180, 0, 4); afkBg.Position = UDim2.new(0, 105, 0, 114); afkBg.BackgroundColor3 = THEME.Slider; ApplyGlassmorphism(afkBg, 2, 1)
 
+local afkPct = math.clamp((afkTimeLimit-60)/(900-60), 0, 1)
 local afkFill = Instance.new("Frame", afkBg)
-afkFill.Size = UDim2.new((afkTimeLimit-60)/(900-60), 0, 1, 0); afkFill.BackgroundColor3 = THEME.Warning; ApplyGlassmorphism(afkFill, 2, 1)
+afkFill.Size = UDim2.new(afkPct, 0, 1, 0); afkFill.BackgroundColor3 = THEME.Warning; ApplyGlassmorphism(afkFill, 2, 1)
+
+local afkKnob = Instance.new("Frame", afkFill)
+afkKnob.Size = UDim2.new(0, 10, 0, 10); afkKnob.Position = UDim2.new(1, -5, 0.5, -5); afkKnob.BackgroundColor3 = THEME.Text; ApplyGlassmorphism(afkKnob, 5, 0.5)
 
 local afkBtn = Instance.new("TextButton", afkBg)
-afkBtn.Size = UDim2.new(1,0,1,0); afkBtn.BackgroundTransparency = 1; afkBtn.Text = ""
-afkBtn.MouseButton1Down:Connect(function()
-    local move, rel
-    move = RunService.RenderStepped:Connect(function()
-        local relX = math.clamp(UserInputService:GetMouseLocation().X - afkBg.AbsolutePosition.X, 0, afkBg.AbsoluteSize.X)
-        local pct = relX / afkBg.AbsoluteSize.X
-        afkTimeLimit = math.floor(60 + (pct * 840))
-        Config.AFKTime = afkTimeLimit
-        afkFill.Size = UDim2.new(pct, 0, 1, 0)
-        AFKLabel.Text = "AFK Hop: "..afkTimeLimit.."s"
-    end)
-    rel = UserInputService.InputEnded:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 then move:Disconnect(); rel:Disconnect(); SaveConfig() end end)
+-- Hitbox AFK Slider diperbesar
+afkBtn.Size = UDim2.new(1, 0, 0, 24); afkBtn.Position = UDim2.new(0, 0, 0.5, -12); afkBtn.BackgroundTransparency = 1; afkBtn.Text = ""
+
+local draggingAFK = false
+afkBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingAFK = true
+        local moveConn
+        moveConn = RunService.RenderStepped:Connect(function()
+            if not draggingAFK then moveConn:Disconnect() return end
+            local mousePos = UserInputService:GetMouseLocation()
+            local relX = math.clamp(mousePos.X - afkBg.AbsolutePosition.X, 0, afkBg.AbsoluteSize.X)
+            local actPct = (afkBg.AbsoluteSize.X > 0) and (relX / afkBg.AbsoluteSize.X) or 0
+            afkTimeLimit = math.floor(60 + (actPct * 840))
+            Config.AFKTime = afkTimeLimit
+            afkFill.Size = UDim2.new(actPct, 0, 1, 0)
+            AFKLabel.Text = "AFK Hop: " .. FormatWaktu(afkTimeLimit)
+        end)
+    end
 end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if draggingAFK then
+            draggingAFK = false
+            SaveConfig()
+        end
+    end
+end)
+
 
 local TogglesFrame = Instance.new("Frame", SettingsFrame)
 TogglesFrame.Size = UDim2.new(1, 0, 1, -135); TogglesFrame.Position = UDim2.new(0, 0, 0, 135); TogglesFrame.BackgroundTransparency = 1
@@ -627,7 +677,7 @@ local WordBrowserBtn = Instance.new("TextButton", TogglesFrame)
 WordBrowserBtn.Text = "Word Browser"; WordBrowserBtn.Font = Enum.Font.GothamMedium; WordBrowserBtn.TextSize = 11; WordBrowserBtn.TextColor3 = THEME.Text; WordBrowserBtn.BackgroundColor3 = THEME.ItemBG; WordBrowserBtn.BackgroundTransparency = THEME.ItemAlpha; WordBrowserBtn.Size = UDim2.new(0, 265, 0, 26); WordBrowserBtn.Position = UDim2.new(0, 15, 0, 186); ApplyGlassmorphism(WordBrowserBtn, 6, 0.9)
 
 local ServerBrowserBtn = Instance.new("TextButton", TogglesFrame)
-ServerBrowserBtn.Text = "Server Hub"; ServerBrowserBtn.Font = Enum.Font.GothamMedium; ServerBrowserBtn.TextSize = 11; ServerBrowserBtn.TextColor3 = THEME.Text; ServerBrowserBtn.BackgroundColor3 = THEME.ItemBG; ServerBrowserBtn.BackgroundTransparency = THEME.ItemAlpha; ServerBrowserBtn.Size = UDim2.new(0, 265, 0, 26); ServerBrowserBtn.Position = UDim2.new(0, 15, 0, 217); ApplyGlassmorphism(ServerBrowserBtn, 6, 0.9)
+ServerBrowserBtn.Text = "SERVER HOP"; ServerBrowserBtn.Font = Enum.Font.GothamMedium; ServerBrowserBtn.TextSize = 11; ServerBrowserBtn.TextColor3 = THEME.Text; ServerBrowserBtn.BackgroundColor3 = THEME.ItemBG; ServerBrowserBtn.BackgroundTransparency = THEME.ItemAlpha; ServerBrowserBtn.Size = UDim2.new(0, 265, 0, 26); ServerBrowserBtn.Position = UDim2.new(0, 15, 0, 217); ApplyGlassmorphism(ServerBrowserBtn, 6, 0.9)
 
 local ShortcutNote = Instance.new("TextLabel", TogglesFrame)
 ShortcutNote.Text = "— Shortcuts —\nRight CTRL: Minimize UI   •   Right Shift: Compact Mode\nDel: Auto Clear Text"
@@ -788,7 +838,7 @@ RefreshCustomWords()
 local ServerFrame = Instance.new("Frame", ScreenGui)
 ServerFrame.Name = "ServerBrowser"; ServerFrame.Size = UDim2.new(0, 350, 0, 400); ServerFrame.Position = UDim2.new(0.5, -175, 0.5, -200); ServerFrame.BackgroundColor3 = THEME.Background; ServerFrame.BackgroundTransparency = THEME.GlassAlpha; ServerFrame.Visible = false; ServerFrame.ClipsDescendants = true; EnableDragging(ServerFrame); ApplyGlassmorphism(ServerFrame, 10, 0.8)
 
-AddMacHeader(ServerFrame, "Server Hub", function() ServerFrame.Visible = false end)
+AddMacHeader(ServerFrame, "SERVER HOP", function() ServerFrame.Visible = false end)
 
 local SBList = Instance.new("ScrollingFrame", ServerFrame)
 SBList.Size = UDim2.new(1, -20, 1, -90); SBList.Position = UDim2.new(0, 10, 0, 50); SBList.BackgroundTransparency = 1; SBList.ScrollBarThickness = 3; SBList.ScrollBarImageColor3 = THEME.Accent
@@ -1197,25 +1247,29 @@ UpdateList = function(detectedText, requiredLetter)
             if #matches > 0 then searchPrefix = requiredLetter; isBacktracked = true end
         end
     end
-    
+
     if #matches > 0 then
         if sortMode == "Longest" then table.sort(matches, function(a, b) return #a > #b end)
         elseif sortMode == "Shortest" then table.sort(matches, function(a, b) return #a < #b end)
         elseif sortMode == "Killer" then table.sort(matches, function(a, b) local sA, sB = GetKillerScore(a), GetKillerScore(b); if sA == sB then return #a < #b end return sA > sB end) 
         elseif sortMode == "Smart" then table.sort(matches, function(a, b) return GetAdvancedScore(a) > GetAdvancedScore(b) end) 
         elseif sortMode == "One by One" then 
-            local currentLen = searchPrefix and #searchPrefix or 0
-            local targetParity = (currentLen % 2 == 0) and 1 or 0
+            -- Strategi Boomerang: Jika musuh memberikan huruf A, lemparkan kembali kata yang berakhiran A.
+            local reqChar = searchPrefix and searchPrefix:sub(1,1):lower() or ""
             table.sort(matches, function(a, b)
-                local aMatch = (#a % 2 == targetParity)
-                local bMatch = (#b % 2 == targetParity)
-                if aMatch and not bMatch then return true end
-                if bMatch and not aMatch then return false end
+                local aEndsSame = (a:sub(-1) == reqChar)
+                local bEndsSame = (b:sub(-1) == reqChar)
+        
+                -- Prioritaskan kata yang akhirnya sama dengan awalan (Boomerang)
+                if aEndsSame and not bEndsSame then return true end
+                if bEndsSame and not aEndsSame then return false end
+        
+                -- Jika keduanya sama (atau tidak sama), prioritas kedua adalah kata terpendek agar ketikan secepat kilat
                 return #a < #b 
             end)
         end
-    end
-    
+    end -- <-- INI END YANG SEBELUMNYA HILANG DAN BIKIN ERROR
+
     local displayList = {}; for i = 1, math.min(40, #matches) do table.insert(displayList, matches[i]) end
     
     if showKeyboard and KeyboardFrame.Visible then
@@ -1296,28 +1350,24 @@ runConn = RunService.RenderStepped:Connect(function()
                 local box = UserInputService:GetFocusedTextBox()
                 if box then box:ReleaseFocus() end 
                 task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        
+                -- Coba fungsi keypress tingkat rendah (Executor modern)
+                if keypress then
+                    pcall(function()
+                        keypress(0x20) -- 0x20 adalah kode hex untuk Spacebar
+                        task.wait(0.05)
+                        keyrelease(0x20)
+                    end)
+                else
+                    -- VIM Fallback: target diubah ke nil agar berlaku secara global
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, nil)
+                        task.wait(0.05)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, nil)
+                    end)
+                end
                 ShowToast("Auto Skill Activated!", "success")
             end)
-        end
-
-        if panicMode and isVisible and isMyTurn and not isTyping and seconds and seconds <= 2.0 and (now - lastPanicTime > 3) then
-            lastPanicTime = now
-            local bucket = Buckets[(requiredLetter or ""):lower()]
-            if bucket then
-                local bestWord, bestLen = nil, 999
-                for _, w in ipairs(bucket) do 
-                    if not Blacklist[w] and not UsedWords[w] and #w < bestLen then 
-                        bestWord, bestLen = w, #w 
-                    end 
-                end
-                if bestWord then 
-                    StatusText.Text = "PANIC SAVE!"; StatusText.TextColor3 = Color3.fromRGB(255, 69, 58)
-                    SmartType(bestWord, "", false, true, true) 
-                end
-            end
         end
 
         if autoJoin and (now - lastAutoJoinCheck > AUTO_JOIN_RATE) then
